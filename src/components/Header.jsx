@@ -195,8 +195,8 @@ export default function Header({
                 : 'text-zinc-600 cursor-not-allowed'
             }`}
           >
-            <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v2m-15-7l4-4m-4 4l4 4" />
+            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 10h10a5 5 0 015 5v2m-15-7l4-4m-4 4l4 4" />
             </svg>
           </button>
 
@@ -210,8 +210,8 @@ export default function Header({
                 : 'text-zinc-600 cursor-not-allowed'
             }`}
           >
-            <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a5 5 0 00-5 5v2m15-7l-4-4m4 4l-4 4" />
+            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 10H11a5 5 0 00-5 5v2m15-7l-4-4m4 4l-4 4" />
             </svg>
           </button>
         </div>
@@ -220,31 +220,31 @@ export default function Header({
       {/* Right Controls: Zoom & Fit to Screen, Import Image, Export */}
       <div className="flex items-center gap-3">
         {/* Zoom & Fit to Screen Controls */}
-        <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-xs text-zinc-400">
+        <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-400 gap-0.5">
           <button
             onClick={() => setZoom((z) => Math.max(10, z - 25))}
-            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-200 transition"
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-100 transition active:scale-95 font-medium"
             title="Zoom Out"
           >
             -
           </button>
           <button
             onClick={() => setZoom(100)}
-            className="px-1.5 font-mono text-[11px] text-zinc-300 hover:text-indigo-400 transition"
+            className="px-2 font-mono text-[11px] text-zinc-300 hover:text-indigo-400 transition"
             title="Reset Zoom to 100%"
           >
             {zoom}%
           </button>
           <button
             onClick={() => setZoom((z) => Math.min(500, z + 25))}
-            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-200 transition"
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-100 transition active:scale-95 font-medium"
             title="Zoom In"
           >
             +
           </button>
           <button
             onClick={onFitToScreen}
-            className="ml-1 px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-indigo-400 hover:text-indigo-300 text-[10px] font-medium transition"
+            className="ml-1 px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-indigo-400 hover:text-indigo-300 text-[10px] font-medium transition active:scale-95 flex items-center justify-center"
             title="Fit Canvas to Viewport"
           >
             Fit
@@ -254,11 +254,13 @@ export default function Header({
         {/* Import Image Button */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition border border-zinc-700 flex items-center gap-1.5 shadow-sm cursor-pointer"
+          className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-3 py-1.5 rounded flex items-center text-xs font-medium transition shadow-sm cursor-pointer"
           title="Import an image file from disk"
         >
-          <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          <svg className="w-4 h-4 mr-1.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
           </svg>
           Import Image
         </button>
@@ -266,11 +268,13 @@ export default function Header({
         {/* High-Res Multi-Format Export Button */}
         <button
           onClick={onOpenExportModal}
-          className="px-3.5 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded transition shadow-sm shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
+          className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded flex items-center text-xs font-medium transition shadow-sm shadow-indigo-600/30 cursor-pointer"
           title="Export multi-layer artwork to PNG/JPEG"
         >
-          <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          <svg className="w-4 h-4 mr-1.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
           Export
         </button>
