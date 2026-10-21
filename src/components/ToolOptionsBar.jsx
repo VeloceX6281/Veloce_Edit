@@ -20,7 +20,8 @@ export default function ToolOptionsBar({
   shapeFillEnabled,
   setShapeFillEnabled,
   shapeFillColor,
-  setShapeFillColor
+  setShapeFillColor,
+  onFitToScreen
 }) {
   return (
     <div className="h-10 bg-[#161820] border-b border-zinc-800/90 px-4 flex items-center justify-between text-xs text-zinc-300 z-10 select-none">
@@ -32,6 +33,42 @@ export default function ToolOptionsBar({
         </div>
 
         <div className="w-[1px] h-4 bg-zinc-800" />
+
+        {/* Move & Free Transform Tool Options */}
+        {activeTool === 'select' && (
+          <div className="flex items-center gap-3 text-zinc-300 text-[11px]">
+            <span>
+              Drag bounding box to move active layer content. Use 8 handles to scale (Hold Shift to lock ratio).
+            </span>
+            <div className="w-[1px] h-4 bg-zinc-800" />
+            <span className="text-indigo-400 font-medium">Enter to Apply • Esc to Cancel</span>
+          </div>
+        )}
+
+        {/* Crop Tool Options */}
+        {activeTool === 'crop' && (
+          <div className="flex items-center gap-3 text-zinc-300 text-[11px]">
+            <span>
+              Drag handles to adjust crop box. Double-click or press Enter to crop all layers.
+            </span>
+            <div className="w-[1px] h-4 bg-zinc-800" />
+            <span className="text-emerald-400 font-medium">Enter to Crop • Esc to Cancel</span>
+          </div>
+        )}
+
+        {/* Hand Tool Options */}
+        {activeTool === 'hand' && (
+          <div className="flex items-center gap-3 text-zinc-300 text-[11px]">
+            <span>Click & drag to pan the canvas artboard.</span>
+            <div className="w-[1px] h-4 bg-zinc-800" />
+            <button
+              onClick={onFitToScreen}
+              className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-indigo-400 border border-zinc-700 transition"
+            >
+              Fit to Screen
+            </button>
+          </div>
+        )}
 
         {/* Brush & Eraser Options */}
         {(activeTool === 'brush' || activeTool === 'eraser') && (
@@ -91,7 +128,7 @@ export default function ToolOptionsBar({
 
             {activeTool === 'eraser' && (
               <span className="text-[11px] text-zinc-400 italic">
-                Cleanly erases strokes to white canvas
+                Cleanly erases strokes from active layer
               </span>
             )}
           </div>
@@ -165,7 +202,7 @@ export default function ToolOptionsBar({
             <div className="w-[1px] h-4 bg-zinc-800" />
 
             <span className="text-[11px] text-indigo-400 font-medium">
-              Tip: Hold Shift for 1:1 Aspect Ratio (Square / Circle)
+              Tip: Hold Shift for 1:1 Aspect Ratio
             </span>
           </div>
         )}
@@ -174,7 +211,7 @@ export default function ToolOptionsBar({
         {activeTool === 'text' && (
           <div className="flex items-center gap-3">
             <span className="text-[11px] text-zinc-300">
-              Click anywhere on the canvas to place and type your text.
+              Click anywhere on the canvas to place text on the active layer.
             </span>
             <div className="w-[1px] h-4 bg-zinc-800" />
             <div className="flex items-center gap-1.5">
@@ -213,13 +250,13 @@ export default function ToolOptionsBar({
                 style={{ backgroundColor: brushColor }}
               />
             </div>
-            <span className="text-[11px] text-zinc-400">Click canvas to fill entire artboard</span>
+            <span className="text-[11px] text-zinc-400">Click canvas to fill active layer</span>
           </div>
         )}
       </div>
 
-      <div className="text-[11px] text-zinc-400 hidden sm:block">
-        Smooth Curve Engine <span className="text-emerald-400">● Active</span>
+      <div className="text-[11px] text-zinc-400 hidden sm:flex items-center gap-2">
+        <span className="text-zinc-500">Hold Spacebar to pan</span>
       </div>
     </div>
   );

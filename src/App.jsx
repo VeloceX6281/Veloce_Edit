@@ -10,14 +10,18 @@ import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
 import {
   createInitialBackgroundLayer,
-  createNewLayer,
-  cloneCanvas
+  createNewLayer
 } from './utils/layerUtils';
+import { cropCanvas } from './utils/transformUtils';
 
 export default function App() {
   // Canvas Dimensions
   const [canvasWidth, setCanvasWidth] = useState(800);
   const [canvasHeight, setCanvasHeight] = useState(500);
+
+  // Viewport Navigation (Pan & Zoom)
+  const [zoom, setZoom] = useState(100);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
 
   // Multi-Layer Architecture State
   const [layers, setLayers] = useState([createInitialBackgroundLayer()]);
@@ -31,7 +35,6 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(8);
   const [shapeFillEnabled, setShapeFillEnabled] = useState(false);
   const [shapeFillColor, setShapeFillColor] = useState('#6366f1');
-  const [zoom, setZoom] = useState(100);
 
   // Filter & Adjustment Pipeline State
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
@@ -43,6 +46,20 @@ export default function App() {
 
   // Computed live filter CSS string for non-destructive GPU preview
   const filterString = getFilterCSSString(adjustments);
+
+  // Fit Canvas to Screen
+  const handleFitToScreen = useCallback(() => {
+    // Standard viewport dimensions (viewport window ~1000x650)
+    const availableW = window.innerWidth - 380;
+    const availableH = window.innerHeight - 140;
+
+    const scaleW = availableW / canvasWidth;
+    const scaleH = availableH / canvasHeight;
+    const fitScale = Math.min(scaleW, scaleH) * 0.9;
+
+    setZoom(Math.max(10, Math.min(250, Math.round(fitScale * 100))));
+    setPan({ x: 0, y: 0 });
+  }, [canvasWidth, canvasHeight]);
 
   // History State Engine (Multi-Layer Snapshot Buffers)
   const handleRestoreSnapshot = useCallback((snapshot) => {
@@ -68,6 +85,47 @@ export default function App() {
     onRestoreSnapshot: handleRestoreSnapshot
   });
 
+  // Execute Canvas Crop across all layers
+  const handleCommitCrop = useCallback((cropBox) => {
+    if (!cropBox || cropBox.width < 10 || cropBox.height < 10) return;
+
+    const newW = Math.round(cropBox.width);
+    const newH = Math.round(cropBox.height);
+
+    // Pre-crop all existing layer canvases into offscreen buffers
+    const croppedBuffers = {};
+    layers.forEach((layer) => {
+      const srcCanvas = layerCanvasesRef.current[layer.id];
+      if (srcCanvas) {
+        croppedBuffers[layer.id] = cropCanvas(srcCanvas, cropBox);
+      }
+    });
+
+    // Update canvas size
+    setCanvasWidth(newW);
+    setCanvasHeight(newH);
+    setPan({ x: 0, y: 0 });
+    setActiveTool('select');
+
+    // Draw back cropped buffers once DOM canvas elements resize
+    setTimeout(() => {
+      layers.forEach((layer) => {
+        const destCanvas = layerCanvasesRef.current[layer.id];
+        const croppedBuffer = croppedBuffers[layer.id];
+        if (destCanvas && croppedBuffer) {
+          const ctx = destCanvas.getContext('2d');
+          ctx.clearRect(0, 0, newW, newH);
+          ctx.drawImage(croppedBuffer, 0, 0);
+        }
+      });
+
+      pushSnapshot({
+        canvasWidth: newW,
+        canvasHeight: newH
+      });
+    }, 40);
+  }, [layers, pushSnapshot]);
+
   // Layer Operations: Add New Layer
   const handleAddLayer = useCallback(() => {
     const newLayer = createNewLayer(`Layer ${layers.length}`);
@@ -80,13 +138,12 @@ export default function App() {
     setLayers(newLayers);
     setActiveLayerId(newLayer.id);
 
-    // Record state in history after element mounts
     setTimeout(() => {
       pushSnapshot({ layers: newLayers, activeLayerId: newLayer.id });
     }, 30);
   }, [layers, activeLayerId, pushSnapshot]);
 
-  // Layer Operations: Delete Active Layer (with safeguard)
+  // Layer Operations: Delete Active Layer
   const handleDeleteLayer = useCallback(() => {
     if (layers.length <= 1) return;
 
@@ -95,7 +152,6 @@ export default function App() {
     const newActiveIndex = Math.max(0, activeIndex - 1);
     const newActiveId = newLayers[newActiveIndex].id;
 
-    // Clean up canvas ref
     delete layerCanvasesRef.current[activeLayerId];
 
     setLayers(newLayers);
@@ -130,7 +186,7 @@ export default function App() {
     }, 40);
   }, [layers, activeLayerId, pushSnapshot]);
 
-  // Layer Operations: Reorder Layers (Move Up / Down)
+  // Layer Operations: Reorder Layers
   const handleMoveLayerUp = useCallback((actualIndex) => {
     if (actualIndex >= layers.length - 1) return;
     const newLayers = [...layers];
@@ -215,7 +271,7 @@ export default function App() {
     setIsImportModalOpen(true);
   }, []);
 
-  // Image Import Option A: Insert as New Layer (scaled to fit)
+  // Image Import Option A: Insert as New Layer
   const handleInsertAsNewLayer = useCallback(() => {
     if (!pendingImageMeta) return;
 
@@ -246,7 +302,7 @@ export default function App() {
     }, 50);
   }, [pendingImageMeta, layers, canvasWidth, canvasHeight, pushSnapshot]);
 
-  // Image Import Option B: Open as New Project (resize canvas to image)
+  // Image Import Option B: Open as New Project
   const handleOpenAsNewProject = useCallback(() => {
     if (!pendingImageMeta) return;
 
@@ -263,12 +319,7 @@ export default function App() {
     setActiveLayerId(bgLayer.id);
     setIsImportModalOpen(false);
 
-    // Adjust zoom if the imported image is very large
-    if (newW > 1200 || newH > 800) {
-      setZoom(Math.round(Math.min(800 / newW, 500 / newH) * 100));
-    } else {
-      setZoom(100);
-    }
+    handleFitToScreen();
 
     setTimeout(() => {
       const canvas = layerCanvasesRef.current[bgLayer.id];
@@ -284,7 +335,7 @@ export default function App() {
       });
       setPendingImageMeta(null);
     }, 50);
-  }, [pendingImageMeta, pushSnapshot]);
+  }, [pendingImageMeta, handleFitToScreen, pushSnapshot]);
 
   // Phase 3: Apply Adjustments to Active Layer
   const handleApplyAdjustments = useCallback(() => {
@@ -320,14 +371,19 @@ export default function App() {
   useEffect(() => {
     const handleToolShortcuts = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) {
-        return;
-      }
-      if (e.ctrlKey || e.metaKey || e.altKey) {
-        return;
-      }
+      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       switch (e.key.toLowerCase()) {
+        case 'v':
+          setActiveTool('select');
+          break;
+        case 'c':
+          setActiveTool('crop');
+          break;
+        case 'h':
+          setActiveTool('hand');
+          break;
         case 'b':
           setActiveTool('brush');
           break;
@@ -339,7 +395,6 @@ export default function App() {
           setActiveTool('rectangle');
           break;
         case 'o':
-        case 'c':
           setActiveTool('circle');
           break;
         case 't':
@@ -347,9 +402,6 @@ export default function App() {
           break;
         case 'g':
           setActiveTool('bucket');
-          break;
-        case 'v':
-          setActiveTool('select');
           break;
         default:
           break;
@@ -366,6 +418,7 @@ export default function App() {
       <Header
         zoom={zoom}
         setZoom={setZoom}
+        onFitToScreen={handleFitToScreen}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={undo}
@@ -389,6 +442,7 @@ export default function App() {
         setShapeFillEnabled={setShapeFillEnabled}
         shapeFillColor={shapeFillColor}
         setShapeFillColor={setShapeFillColor}
+        onFitToScreen={handleFitToScreen}
       />
 
       {/* Main Studio Workspace */}
@@ -402,20 +456,26 @@ export default function App() {
           brushSize={brushSize}
         />
 
-        {/* Center Multi-Layer Canvas Viewport */}
+        {/* Center Multi-Layer Canvas Viewport with Pan, Zoom, Transform & Crop */}
         <CanvasViewport
           activeTool={activeTool}
+          setActiveTool={setActiveTool}
           brushColor={brushColor}
           brushSize={brushSize}
           shapeFillEnabled={shapeFillEnabled}
           shapeFillColor={shapeFillColor}
           zoom={zoom}
+          setZoom={setZoom}
+          pan={pan}
+          setPan={setPan}
+          onFitToScreen={handleFitToScreen}
           filterString={filterString}
           layers={layers}
           activeLayerId={activeLayerId}
           layerCanvasesRef={layerCanvasesRef}
           pushSnapshot={pushSnapshot}
           initHistory={initHistory}
+          onCommitCrop={handleCommitCrop}
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
         />

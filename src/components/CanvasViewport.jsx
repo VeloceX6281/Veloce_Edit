@@ -1,19 +1,28 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import TextOverlay from './TextOverlay';
+import TransformOverlay from './TransformOverlay';
+import CropOverlay from './CropOverlay';
+import { getLayerContentBounds } from '../utils/transformUtils';
 
 export default function CanvasViewport({
   activeTool,
+  setActiveTool,
   brushColor,
   brushSize,
   shapeFillEnabled,
   shapeFillColor,
   zoom,
+  setZoom,
+  pan,
+  setPan,
+  onFitToScreen,
   filterString = 'none',
   layers,
   activeLayerId,
   layerCanvasesRef,
   pushSnapshot,
   initHistory,
+  onCommitCrop,
   canvasWidth = 800,
   canvasHeight = 500
 }) {
@@ -30,34 +39,99 @@ export default function CanvasViewport({
   const shapeStartRef = useRef({ x: 0, y: 0 });
   const lastMousePosRef = useRef({ x: 0, y: 0 });
 
+  // Panning State (Spacebar or Hand Tool)
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+
   // Cursor position indicator
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0, inside: false });
 
   // Text overlay state
   const [textConfig, setTextConfig] = useState(null);
 
-  // Initialize Canvas & Background layer on mount or resize
+  // Free Transform State
+  const [transformState, setTransformState] = useState(null);
+  // { box, offscreenCanvas, origBox }
+
+  // Crop State
+  const [cropBox, setCropBox] = useState(null);
+
+  // Initialize Canvas & Background layer on mount
   useEffect(() => {
-    // Check if background canvas is mounted
     const bgCanvas = layerCanvasesRef.current['layer_background'] || layerCanvasesRef.current[layers[0]?.id];
     if (bgCanvas) {
       const ctx = bgCanvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
-        // Paint solid white on background layer if empty
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
       }
     }
-
-    // Initialize history state
     initHistory(layers, activeLayerId, canvasWidth, canvasHeight);
   }, []);
 
-  // Helper to retrieve the active layer's canvas element
+  // Initialize Crop Box when Crop Tool is activated
+  useEffect(() => {
+    if (activeTool === 'crop') {
+      const padX = Math.round(canvasWidth * 0.05);
+      const padY = Math.round(canvasHeight * 0.05);
+      setCropBox({
+        x: padX,
+        y: padY,
+        width: Math.max(40, canvasWidth - padX * 2),
+        height: Math.max(40, canvasHeight - padY * 2)
+      });
+    } else {
+      setCropBox(null);
+    }
+  }, [activeTool, canvasWidth, canvasHeight]);
+
+  // Spacebar hotkey listener for temporary Hand tool pan
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+        isPanningRef.current = false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Wheel listener: Ctrl + Wheel for Smooth Cursor-Centered Zoom
+  const handleWheel = (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      setZoom((prevZoom) => {
+        const nextZoom = Math.round(prevZoom * zoomFactor);
+        return Math.max(10, Math.min(500, nextZoom));
+      });
+    } else if (e.shiftKey) {
+      // Horizontal pan with shift+wheel
+      setPan((prev) => ({ ...prev, x: prev.x - e.deltaY }));
+    }
+  };
+
+  // Helper to retrieve active layer canvas
   const getActiveCanvas = useCallback(() => {
     const canvas = layerCanvasesRef.current[activeLayerId];
     if (canvas) return canvas;
-    // Fallback to top-most layer
     const fallbackId = layers[layers.length - 1]?.id;
     return layerCanvasesRef.current[fallbackId] || null;
   }, [activeLayerId, layers, layerCanvasesRef]);
@@ -75,14 +149,105 @@ export default function CanvasViewport({
     };
   }, [getActiveCanvas]);
 
-  // Render shape on a given canvas context
+  // Initialize Move & Free Transform on active layer
+  const startTransform = useCallback(() => {
+    const activeCanvas = getActiveCanvas();
+    if (!activeCanvas) return;
+
+    const bounds = getLayerContentBounds(activeCanvas);
+    if (!bounds) return;
+
+    // Snapshot content in bounds into an offscreen canvas
+    const offscreen = document.createElement('canvas');
+    offscreen.width = Math.max(1, bounds.width);
+    offscreen.height = Math.max(1, bounds.height);
+    const offCtx = offscreen.getContext('2d');
+
+    offCtx.drawImage(
+      activeCanvas,
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      0,
+      0,
+      bounds.width,
+      bounds.height
+    );
+
+    // Clear content from active canvas temporarily
+    const ctx = activeCanvas.getContext('2d');
+    const isBackground = layers.find((l) => l.id === activeLayerId)?.isBackground;
+    if (isBackground) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    } else {
+      ctx.clearRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+
+    setTransformState({
+      box: { ...bounds },
+      origBox: { ...bounds },
+      offscreenCanvas: offscreen
+    });
+  }, [getActiveCanvas, layers, activeLayerId]);
+
+  // Automatically start transform when 'select' tool is clicked
+  useEffect(() => {
+    if (activeTool === 'select' && !transformState) {
+      startTransform();
+    } else if (activeTool !== 'select' && transformState) {
+      // Commit pending transform if tool changes
+      commitTransform();
+    }
+  }, [activeTool]);
+
+  // Commit Free Transform directly to active layer
+  const commitTransform = useCallback(() => {
+    if (!transformState) return;
+
+    const activeCanvas = getActiveCanvas();
+    if (activeCanvas && transformState.offscreenCanvas) {
+      const ctx = activeCanvas.getContext('2d');
+      ctx.drawImage(
+        transformState.offscreenCanvas,
+        transformState.box.x,
+        transformState.box.y,
+        transformState.box.width,
+        transformState.box.height
+      );
+      pushSnapshot();
+    }
+
+    setTransformState(null);
+  }, [transformState, getActiveCanvas, pushSnapshot]);
+
+  // Cancel Free Transform (restores original pixels)
+  const cancelTransform = useCallback(() => {
+    if (!transformState) return;
+
+    const activeCanvas = getActiveCanvas();
+    if (activeCanvas && transformState.offscreenCanvas) {
+      const ctx = activeCanvas.getContext('2d');
+      ctx.drawImage(
+        transformState.offscreenCanvas,
+        transformState.origBox.x,
+        transformState.origBox.y,
+        transformState.origBox.width,
+        transformState.origBox.height
+      );
+    }
+
+    setTransformState(null);
+  }, [transformState, getActiveCanvas]);
+
+  // Render shape on context
   const renderShape = useCallback((ctx, startX, startY, currX, currY, isShift) => {
     const dx = currX - startX;
     const dy = currY - startY;
     let w = dx;
     let h = dy;
 
-    // 1:1 Aspect Ratio constraint if Shift key is pressed
     if (isShift) {
       const size = Math.max(Math.abs(dx), Math.abs(dy));
       w = dx < 0 ? -size : size;
@@ -122,41 +287,27 @@ export default function CanvasViewport({
     ctx.restore();
   }, [activeTool, brushColor, brushSize, shapeFillEnabled, shapeFillColor]);
 
-  // Handle Shift key press/release during shape drag
-  useEffect(() => {
-    const handleShiftChange = (e) => {
-      if (!isDrawingShapeRef.current || !previewCanvasRef.current) return;
-      const pCanvas = previewCanvasRef.current;
-      const pCtx = pCanvas.getContext('2d');
-      if (!pCtx) return;
-
-      pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
-      renderShape(
-        pCtx,
-        shapeStartRef.current.x,
-        shapeStartRef.current.y,
-        lastMousePosRef.current.x,
-        lastMousePosRef.current.y,
-        e.shiftKey
-      );
-    };
-
-    window.addEventListener('keydown', handleShiftChange);
-    window.addEventListener('keyup', handleShiftChange);
-    return () => {
-      window.removeEventListener('keydown', handleShiftChange);
-      window.removeEventListener('keyup', handleShiftChange);
-    };
-  }, [renderShape]);
-
   // Pointer Down handler
   const handlePointerDown = (e) => {
-    if (e.button !== 0) return; // Primary mouse button only
+    if (e.button !== 0) return;
+
+    // Pan mode (Spacebar or Hand Tool)
+    if (isSpacePressed || activeTool === 'hand') {
+      isPanningRef.current = true;
+      panStartRef.current = {
+        x: e.clientX - pan.x,
+        y: e.clientY - pan.y
+      };
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
 
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
 
-    // 1. Text Tool
+    // Text Tool
     if (activeTool === 'text') {
       setTextConfig({
         visible: true,
@@ -172,18 +323,17 @@ export default function CanvasViewport({
       setTextConfig(null);
     }
 
-    // 2. Shape Tools
+    // Shapes Tool
     if (activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') {
       isDrawingShapeRef.current = true;
       shapeStartRef.current = coords;
-
       if (e.currentTarget.setPointerCapture) {
         e.currentTarget.setPointerCapture(e.pointerId);
       }
       return;
     }
 
-    // 3. Paint Bucket: Fill Active Layer
+    // Paint Bucket
     if (activeTool === 'bucket') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -194,7 +344,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // 4. Freehand Brush & Eraser (draws onto active layer)
+    // Freehand Brush & Eraser
     if (activeTool === 'brush' || activeTool === 'eraser') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -214,12 +364,10 @@ export default function CanvasViewport({
 
       if (activeTool === 'eraser') {
         if (isBackground) {
-          // Erase back to white paper on background layer
           ctx.strokeStyle = '#ffffff';
           ctx.fillStyle = '#ffffff';
           ctx.globalCompositeOperation = 'source-over';
         } else {
-          // Clean transparent erase on transparent layers
           ctx.globalCompositeOperation = 'destination-out';
         }
       } else {
@@ -236,6 +384,15 @@ export default function CanvasViewport({
 
   // Pointer Move handler
   const handlePointerMove = (e) => {
+    // Panning execution
+    if (isPanningRef.current) {
+      setPan({
+        x: e.clientX - panStartRef.current.x,
+        y: e.clientY - panStartRef.current.y
+      });
+      return;
+    }
+
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
     setCursorPos({ x: coords.x, y: coords.y, inside: true });
@@ -257,7 +414,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // Freehand Brush / Eraser with quadratic bezier curve smoothing
+    // Freehand Brush / Eraser drawing
     if (isDrawingRef.current && (activeTool === 'brush' || activeTool === 'eraser')) {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -289,6 +446,11 @@ export default function CanvasViewport({
 
   // Pointer Up handler
   const handlePointerUp = (e) => {
+    if (isPanningRef.current) {
+      isPanningRef.current = false;
+      return;
+    }
+
     // Commit Shape
     if (isDrawingShapeRef.current) {
       const coords = getCanvasCoords(e);
@@ -344,7 +506,7 @@ export default function CanvasViewport({
     }
   };
 
-  // Commit text from overlay onto active layer
+  // Text Commit
   const handleCommitText = (textData) => {
     const activeCanvas = getActiveCanvas();
     if (!activeCanvas) return;
@@ -369,7 +531,11 @@ export default function CanvasViewport({
     setTextConfig(null);
   };
 
+  // Dynamic Viewport Cursor
   const getCursorStyle = () => {
+    if (isSpacePressed || activeTool === 'hand') {
+      return isPanningRef.current ? 'cursor-grabbing' : 'cursor-grab';
+    }
     switch (activeTool) {
       case 'text':
         return 'cursor-text';
@@ -381,6 +547,10 @@ export default function CanvasViewport({
         return 'cursor-crosshair';
       case 'bucket':
         return 'cursor-pointer';
+      case 'select':
+        return 'cursor-default';
+      case 'crop':
+        return 'cursor-crosshair';
       default:
         return 'cursor-default';
     }
@@ -391,18 +561,19 @@ export default function CanvasViewport({
   return (
     <main
       ref={containerRef}
+      onWheel={handleWheel}
       className="flex-1 bg-[#090a0f] relative overflow-hidden flex items-center justify-center p-8 select-none"
     >
-      {/* Canvas Viewport Container */}
+      {/* Canvas Viewport Container with Smooth Zoom & Pan Transforms */}
       <div
         className="relative shadow-2xl shadow-black/90 rounded border border-zinc-800 bg-[#1e2029] overflow-hidden transition-transform duration-75 origin-center"
         style={{
           width: `${canvasWidth}px`,
           height: `${canvasHeight}px`,
-          transform: `scale(${zoom / 100})`
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`
         }}
       >
-        {/* Subtle checkered background to denote transparency */}
+        {/* Subtle Checkered Transparency Background */}
         <div
           className="absolute inset-0 bg-white"
           style={{
@@ -415,7 +586,7 @@ export default function CanvasViewport({
           }}
         />
 
-        {/* Multi-Layer Stack: Render each layer canvas in bottom-to-top visual order */}
+        {/* Stacked Multi-Layer Canvases */}
         {layers.map((layer) => (
           <canvas
             key={layer.id}
@@ -434,7 +605,7 @@ export default function CanvasViewport({
           />
         ))}
 
-        {/* Live Preview Canvas for shape dragging and real-time interaction */}
+        {/* Live Preview Canvas for shapes and feedback */}
         <canvas
           ref={previewCanvasRef}
           width={canvasWidth}
@@ -445,9 +616,36 @@ export default function CanvasViewport({
           className="absolute inset-0 block pointer-events-none z-30"
         />
 
-        {/* Pointer Interaction Layer (Captures mouse/touch gestures cleanly) */}
+        {/* Move & Free Transform Interactive Bounding Box */}
+        {activeTool === 'select' && transformState && (
+          <TransformOverlay
+            box={transformState.box}
+            setBox={(newBox) =>
+              setTransformState((prev) => ({ ...prev, box: newBox }))
+            }
+            offscreenCanvas={transformState.offscreenCanvas}
+            onCommit={commitTransform}
+            onCancel={cancelTransform}
+            zoom={zoom}
+          />
+        )}
+
+        {/* Interactive Crop Tool Overlay */}
+        {activeTool === 'crop' && cropBox && (
+          <CropOverlay
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+            cropBox={cropBox}
+            setCropBox={setCropBox}
+            onCommitCrop={() => onCommitCrop(cropBox)}
+            onCancel={() => setActiveTool('select')}
+            zoom={zoom}
+          />
+        )}
+
+        {/* Interaction Surface */}
         <div
-          className={`absolute inset-0 z-40 ${getCursorStyle()}`}
+          className={`absolute inset-0 z-20 ${getCursorStyle()}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -490,23 +688,12 @@ export default function CanvasViewport({
             </span>
           </>
         )}
-        {filterString !== 'none' && (
-          <>
-            <span>|</span>
-            <span className="text-[10px] text-indigo-400 font-medium flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
-              Filter Preview
-            </span>
-          </>
-        )}
-        {(activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'shapes') && (
-          <>
-            <span>|</span>
-            <span className="text-[10px] text-indigo-400 font-medium">
-              Shift = 1:1
-            </span>
-          </>
-        )}
+        <button
+          onClick={onFitToScreen}
+          className="ml-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+        >
+          Fit
+        </button>
       </div>
     </main>
   );

@@ -10,11 +10,27 @@ export default function Toolbar({
   const tools = [
     {
       id: 'select',
-      name: 'Select / Move',
+      name: 'Move & Transform Tool',
       icon: (
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 4l7 17 2.5-6.5L20 12 4 4z" />
       ),
       shortcut: 'V'
+    },
+    {
+      id: 'crop',
+      name: 'Crop Tool',
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 2v14a2 2 0 002 2h14 M2 6h14a2 2 0 012 2v14" />
+      ),
+      shortcut: 'C'
+    },
+    {
+      id: 'hand',
+      name: 'Hand Tool (Pan Viewport)',
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+      ),
+      shortcut: 'H'
     },
     {
       id: 'brush',
@@ -67,7 +83,7 @@ export default function Toolbar({
   ];
 
   return (
-    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-3 gap-2 z-10 select-none">
+    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-3 gap-1.5 z-10 select-none">
       {tools.map((tool) => {
         const isActive = activeTool === tool.id || (tool.id === 'rectangle' && activeTool === 'shapes');
         return (
@@ -93,7 +109,7 @@ export default function Toolbar({
         );
       })}
 
-      <div className="w-8 h-[1px] bg-zinc-800 my-2" />
+      <div className="w-8 h-[1px] bg-zinc-800 my-1" />
 
       {/* Primary Color Picker Swatch */}
       <div className="relative group">

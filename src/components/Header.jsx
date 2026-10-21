@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react';
 export default function Header({
   zoom,
   setZoom,
+  onFitToScreen,
   canUndo,
   canRedo,
   onUndo,
@@ -216,12 +217,12 @@ export default function Header({
         </div>
       </div>
 
-      {/* Right Controls: Zoom, Import Image, Export */}
+      {/* Right Controls: Zoom & Fit to Screen, Import Image, Export */}
       <div className="flex items-center gap-3">
-        {/* Zoom Controls */}
+        {/* Zoom & Fit to Screen Controls */}
         <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-xs text-zinc-400">
           <button
-            onClick={() => setZoom((z) => Math.max(25, z - 25))}
+            onClick={() => setZoom((z) => Math.max(10, z - 25))}
             className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-200 transition"
             title="Zoom Out"
           >
@@ -229,17 +230,24 @@ export default function Header({
           </button>
           <button
             onClick={() => setZoom(100)}
-            className="px-2 font-mono text-[11px] text-zinc-300 hover:text-indigo-400 transition"
+            className="px-1.5 font-mono text-[11px] text-zinc-300 hover:text-indigo-400 transition"
             title="Reset Zoom to 100%"
           >
             {zoom}%
           </button>
           <button
-            onClick={() => setZoom((z) => Math.min(250, z + 25))}
+            onClick={() => setZoom((z) => Math.min(500, z + 25))}
             className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-200 transition"
             title="Zoom In"
           >
             +
+          </button>
+          <button
+            onClick={onFitToScreen}
+            className="ml-1 px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-indigo-400 hover:text-indigo-300 text-[10px] font-medium transition"
+            title="Fit Canvas to Viewport"
+          >
+            Fit
           </button>
         </div>
 
