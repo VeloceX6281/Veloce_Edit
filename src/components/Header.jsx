@@ -13,6 +13,11 @@ export default function Header({
   onOpenExportModal,
   onAddLayer,
   onDeleteLayer,
+  onDuplicateLayer,
+  onToggleClippingMask,
+  onMergeDown,
+  onFlattenImage,
+  onSaveProject,
   layersCount = 1,
   showRulers,
   onToggleRulers,
@@ -22,7 +27,7 @@ export default function Header({
   onDeselect,
   onInvertMarquee,
   onFreeTransform,
-  documentName = 'Untitled-1.png'
+  documentName = 'Untitled-1.psd'
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -71,7 +76,8 @@ export default function Header({
         { label: 'New Project...', shortcut: 'Ctrl+N', action: () => onClearCanvas && onClearCanvas() },
         { label: 'Open / Import Image...', shortcut: 'Ctrl+O', action: () => fileInputRef.current?.click() },
         { divider: true },
-        { label: 'Export As (PNG, JPG)...', shortcut: 'Ctrl+E', action: onOpenExportModal },
+        { label: 'Save Project (.json)...', shortcut: 'Ctrl+S', action: onSaveProject },
+        { label: 'Export As (PNG, JPEG, WebP)...', shortcut: 'Ctrl+E', action: onOpenExportModal },
         { label: 'Quick Export as PNG', action: onOpenExportModal },
         { divider: true },
         { label: 'Close Document', shortcut: 'Ctrl+W', action: () => onClearCanvas && onClearCanvas() }
@@ -85,6 +91,7 @@ export default function Header({
         { label: 'Redo', shortcut: 'Ctrl+Y', action: onRedo, disabled: !canRedo },
         { divider: true },
         { label: 'Free Transform', shortcut: 'Ctrl+T', action: onFreeTransform },
+        { label: 'Deselect', shortcut: 'Ctrl+D', action: onDeselect },
         { label: 'Clear Active Layer', shortcut: 'Del', action: onClearCanvas },
         { divider: true },
         { label: 'Fill Layer...', shortcut: 'Alt+Backspace', action: onClearCanvas },
@@ -97,11 +104,11 @@ export default function Header({
       children: [
         { label: 'Mode: RGB Color (8 Bit)', disabled: true, checked: true },
         { divider: true },
-        { label: 'Adjustments (Right Panel)', shortcut: 'F8', action: () => {} },
+        { label: 'Image Size...', action: onFitToScreen },
         { label: 'Canvas Size...', action: onFitToScreen },
-        { label: 'Crop Canvas', action: () => {} },
         { divider: true },
-        { label: 'Duplicate Image...', action: () => {} }
+        { label: 'Adjustments (Right Panel)', shortcut: 'F8', action: () => {} },
+        { label: 'Invert Colors', shortcut: 'Ctrl+I', action: () => {} }
       ]
     },
     {
@@ -109,11 +116,25 @@ export default function Header({
       label: 'Layer',
       children: [
         { label: 'New Layer', shortcut: 'Shift+Ctrl+N', action: onAddLayer },
-        { label: 'Duplicate Layer', shortcut: 'Ctrl+J', action: onAddLayer },
+        { label: 'Duplicate Layer', shortcut: 'Ctrl+J', action: onDuplicateLayer || onAddLayer },
         { label: 'Delete Layer', action: onDeleteLayer, disabled: layersCount <= 1 },
         { divider: true },
-        { label: 'Lock Layer', disabled: true },
-        { label: 'Merge Visible', shortcut: 'Shift+Ctrl+E', disabled: true }
+        {
+          label: 'Create / Release Clipping Mask',
+          shortcut: 'Ctrl+Alt+G',
+          action: onToggleClippingMask
+        },
+        {
+          label: 'Merge Down',
+          shortcut: 'Ctrl+E',
+          action: onMergeDown,
+          disabled: layersCount <= 1
+        },
+        {
+          label: 'Flatten Image',
+          action: onFlattenImage,
+          disabled: layersCount <= 1
+        }
       ]
     },
     {
@@ -133,7 +154,6 @@ export default function Header({
       children: [
         { label: 'Last Filter (Live)', shortcut: 'Ctrl+F', action: () => {} },
         { divider: true },
-        { label: 'Blur (Gaussian / Box)...', action: () => {} },
         { label: 'Brightness & Contrast...', action: () => {} },
         { label: 'Invert / Negative', shortcut: 'Ctrl+I', action: () => {} },
         { label: 'Grayscale / Desaturate', shortcut: 'Shift+Ctrl+U', action: () => {} }
@@ -168,8 +188,14 @@ export default function Header({
       id: 'help',
       label: 'Help',
       children: [
-        { label: 'About VeloceEdit (Photoshop Web)', action: () => alert('VeloceEdit - Authentic Adobe Photoshop Web Experience') },
-        { label: 'Keyboard Shortcuts Cheatsheet', action: () => alert('V: Move\nM: Marquee\nL: Lasso\nC: Crop\nI: Eyedropper\nB: Brush\nS: Stamp\nE: Eraser\nG: Bucket\nT: Type\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+Z: Undo\nCtrl+Y: Redo') }
+        { label: 'About VeloceEdit (Photoshop Web)', action: () => alert('VeloceEdit - 1:1 Adobe Photoshop Desktop Parity') },
+        {
+          label: 'Keyboard Shortcuts Cheatsheet',
+          action: () =>
+            alert(
+              'V: Move\nM: Marquee\nL: Lasso\nW: Magic Wand\nC: Crop\nI: Eyedropper\nB: Brush\nS: Clone Stamp\nE: Eraser\nG: Paint Bucket\nT: Text\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+Alt+G: Clipping Mask\nCtrl+E: Merge Down\nCtrl+T: Free Transform\nCtrl+Z: Undo\nCtrl+Y: Redo\nCtrl+D: Deselect'
+            )
+        }
       ]
     }
   ];
@@ -177,7 +203,7 @@ export default function Header({
   return (
     <header
       ref={menuBarRef}
-      className="h-7 bg-[#2b2b2b] border-b border-[#181818] flex items-center justify-between px-2 z-30 select-none text-[11px] font-sans"
+      className="h-7 bg-[#282828] border-b border-[#181818] flex items-center justify-between px-2 z-30 select-none text-[11px] font-sans shrink-0"
     >
       {/* Hidden File Input */}
       <input
@@ -192,8 +218,8 @@ export default function Header({
       <div className="flex items-center gap-1">
         {/* Authentic Photoshop 'Ps' Logo Box */}
         <div
-          className="w-5 h-5 bg-[#001e36] text-[#31a8ff] font-bold text-[10px] flex items-center justify-center rounded-[2px] border border-[#003764] mr-1.5 shadow-sm select-none cursor-default"
-          title="Adobe Photoshop Web (VeloceEdit)"
+          className="w-5 h-5 bg-[#001e36] text-[#31a8ff] font-bold text-[10px] flex items-center justify-center rounded-[2px] border border-[#003764] mr-1 shadow-sm select-none cursor-default font-sans"
+          title="Adobe Photoshop Desktop Web (VeloceEdit)"
         >
           Ps
         </div>
@@ -222,12 +248,12 @@ export default function Header({
 
                 {isOpen && (
                   <div
-                    className="absolute left-0 top-6 min-w-[200px] bg-[#252525] border border-[#383838] py-1 shadow-2xl z-50 text-[11px] text-zinc-200 rounded-[2px]"
+                    className="absolute left-0 top-6 min-w-[210px] bg-[#222222] border border-[#3a3a3a] py-1 shadow-2xl z-50 text-[11px] text-zinc-200 rounded-[2px]"
                     onMouseLeave={() => setActiveMenu(null)}
                   >
                     {menu.children.map((child, idx) => {
                       if (child.divider) {
-                        return <div key={idx} className="h-[1px] bg-[#383838] my-1" />;
+                        return <div key={idx} className="h-[1px] bg-[#333333] my-1" />;
                       }
 
                       return (
@@ -247,14 +273,14 @@ export default function Header({
                         >
                           <span className="flex items-center gap-2">
                             {child.checked ? (
-                              <span className="text-[10px] w-2">✓</span>
+                              <span className="text-[10px] w-2 text-[#31a8ff]">✓</span>
                             ) : (
                               <span className="w-2" />
                             )}
                             {child.label}
                           </span>
                           {child.shortcut && (
-                            <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 font-mono">
+                            <span className="text-[10px] text-zinc-500 font-mono">
                               {child.shortcut}
                             </span>
                           )}
@@ -270,10 +296,10 @@ export default function Header({
       </div>
 
       {/* Right Controls: Document Info, Compact Quick Actions, Compact Zoom */}
-      <div className="flex items-center gap-2.5 text-zinc-400">
+      <div className="flex items-center gap-2 text-zinc-400">
         {/* Document Status */}
-        <div className="text-[10px] text-zinc-400 font-mono hidden sm:inline-block">
-          <span className="text-zinc-300">{documentName}</span> @ {zoom}% (RGB/8)
+        <div className="text-[10px] text-zinc-400 font-mono hidden md:inline-block">
+          <span className="text-zinc-300">{documentName}</span> @ {zoom}% (RGB/8#)
         </div>
 
         <div className="w-[1px] h-3 bg-[#3a3a3a]" />
@@ -283,11 +309,11 @@ export default function Header({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-5 h-5 rounded-[2px] bg-[#222] hover:bg-[#383838] hover:text-white text-zinc-300 border border-[#383838] flex items-center justify-center transition"
+            className="w-5 h-5 rounded-[2px] bg-[#1c1c1c] hover:bg-[#383838] hover:text-white text-zinc-300 border border-[#3a3a3a] flex items-center justify-center transition"
             title="Open / Import Image (Ctrl+O)"
           >
             <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <rect x="3" y="3" width="18" height="18" rx="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
               <polyline points="21 15 16 10 5 21" />
             </svg>
@@ -310,7 +336,7 @@ export default function Header({
         <div className="w-[1px] h-3 bg-[#3a3a3a]" />
 
         {/* Compact Zoom & Fit Controls */}
-        <div className="flex items-center bg-[#202020] border border-[#383838] rounded-[2px] px-1 py-0 text-[10px] text-zinc-300">
+        <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] px-1 py-0 text-[10px] text-zinc-300">
           <button
             type="button"
             onClick={() => setZoom((z) => Math.max(10, z - 25))}
@@ -338,7 +364,7 @@ export default function Header({
           <button
             type="button"
             onClick={onFitToScreen}
-            className="ml-1 px-1.5 rounded-[2px] bg-[#2b2b2b] hover:bg-[#383838] text-[#31a8ff] hover:text-white text-[9px] font-semibold transition"
+            className="ml-1 px-1.5 rounded-[2px] bg-[#282828] hover:bg-[#383838] text-[#31a8ff] hover:text-white text-[9px] font-semibold transition"
             title="Fit Canvas to Screen (Ctrl+0)"
           >
             FIT

@@ -1,5 +1,5 @@
 /**
- * Multi-layer utilities, blend modes, and layer factory helpers
+ * Multi-layer utilities, blend modes, clipping masks, and layer factory helpers
  */
 
 export const BLEND_MODES = [
@@ -44,16 +44,58 @@ export function getCompositeOperation(blendMode) {
 }
 
 /**
- * Creates an empty transparent layer descriptor
+ * Creates an empty transparent pixel layer descriptor
  */
 export function createNewLayer(name = 'New Layer', customId = null) {
   return {
     id: customId || `layer_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
     name,
+    type: 'pixel',
     visible: true,
     opacity: 100,
     blendMode: 'normal',
-    isBackground: false
+    isBackground: false,
+    isClippingMask: false,
+    locks: {
+      transparent: false,
+      pixels: false,
+      position: false
+    }
+  };
+}
+
+/**
+ * Creates a persistent live re-editable text layer descriptor
+ */
+export function createLiveTextLayer(textData = {}) {
+  const textSnippet = (textData.text || 'Text Layer').trim().slice(0, 14);
+  return {
+    id: `text_layer_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+    name: `Text: ${textSnippet || 'New Text'}`,
+    type: 'text',
+    textData: {
+      text: textData.text || 'Sample Text',
+      x: textData.x || 100,
+      y: textData.y || 100,
+      fontSize: textData.fontSize || 32,
+      fontFamily: textData.fontFamily || 'Arial',
+      color: textData.color || '#000000',
+      align: textData.align || 'left',
+      isBold: textData.isBold || false,
+      isItalic: textData.isItalic || false,
+      width: textData.width || 200,
+      height: textData.height || 50
+    },
+    visible: true,
+    opacity: 100,
+    blendMode: 'normal',
+    isBackground: false,
+    isClippingMask: false,
+    locks: {
+      transparent: false,
+      pixels: false,
+      position: false
+    }
   };
 }
 
@@ -64,10 +106,17 @@ export function createInitialBackgroundLayer() {
   return {
     id: 'layer_background',
     name: 'Background',
+    type: 'pixel',
     visible: true,
     opacity: 100,
     blendMode: 'normal',
-    isBackground: true
+    isBackground: true,
+    isClippingMask: false,
+    locks: {
+      transparent: false,
+      pixels: false,
+      position: true
+    }
   };
 }
 
@@ -82,4 +131,16 @@ export function cloneCanvas(sourceCanvas) {
   const ctx = clone.getContext('2d');
   ctx.drawImage(sourceCanvas, 0, 0);
   return clone;
+}
+
+/**
+ * Finds the base layer index for a clipping mask layer
+ */
+export function getClippingBaseIndex(layers, clippingIndex) {
+  for (let i = clippingIndex - 1; i >= 0; i--) {
+    if (!layers[i].isClippingMask) {
+      return i;
+    }
+  }
+  return null;
 }

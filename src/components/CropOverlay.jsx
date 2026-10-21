@@ -197,20 +197,20 @@ export default function CropOverlay({
 
         {/* Floating Crop Control Bar */}
         <div
-          className="absolute -bottom-11 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#181a22]/95 backdrop-blur border border-zinc-700 rounded-md px-3 py-1 text-xs text-zinc-200 shadow-2xl whitespace-nowrap z-50 animate-in fade-in duration-100"
+          className="absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#1e1e1e] border border-[#3a3a3a] rounded-[2px] px-2.5 py-0.5 text-[11px] text-zinc-200 shadow-2xl whitespace-nowrap z-50 font-sans"
           onClick={(e) => e.stopPropagation()}
         >
           <span className="font-mono text-[10px] text-zinc-300 font-semibold">
             {cropBox.width} × {cropBox.height} px
           </span>
 
-          <div className="w-[1px] h-3 bg-zinc-700" />
+          <div className="w-[1px] h-3 bg-[#3a3a3a]" />
 
           {/* Ratio Selector */}
           <select
             value={aspectRatio}
             onChange={(e) => setAspectRatio(e.target.value)}
-            className="bg-zinc-800 text-zinc-200 text-[10px] rounded px-1.5 py-0.5 border border-zinc-700 focus:outline-none cursor-pointer"
+            className="bg-[#181818] text-zinc-200 text-[10px] rounded-[1px] px-1 py-0.5 border border-[#3a3a3a] focus:outline-none cursor-pointer"
           >
             <option value="free">Freeform</option>
             <option value="1:1">1:1 Square</option>
@@ -219,22 +219,22 @@ export default function CropOverlay({
             <option value="9:16">9:16 Story</option>
           </select>
 
-          <div className="w-[1px] h-3 bg-zinc-700" />
+          <div className="w-[1px] h-3 bg-[#3a3a3a]" />
 
           <button
             onClick={onCommitCrop}
-            className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] flex items-center gap-1 shadow-sm transition cursor-pointer"
+            className="px-2 py-0.5 rounded-[1px] bg-[#1473e6] hover:bg-[#0d66d0] text-white font-medium text-[10px] flex items-center gap-1 shadow-sm transition cursor-pointer"
             title="Crop Canvas (Enter)"
           >
-            Crop
+            ✔ Commit
           </button>
 
           <button
             onClick={onCancel}
-            className="px-1.5 py-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 text-[11px] transition cursor-pointer"
+            className="px-1.5 py-0.5 rounded-[1px] text-zinc-300 hover:text-white hover:bg-[#383838] border border-[#3a3a3a] text-[10px] transition cursor-pointer"
             title="Cancel (Esc)"
           >
-            Cancel
+            ✖ Cancel
           </button>
         </div>
       </div>

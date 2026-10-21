@@ -14,8 +14,9 @@ export default function Toolbar({
   const tools = [
     {
       id: 'select',
-      name: 'Move / Select Tool',
+      name: 'Move Tool',
       shortcut: 'V',
+      hasFlyout: false,
       icon: (
         <>
           <path d="M4 4l6.5 15.5 2.5-6.5 6.5-2.5L4 4z" />
@@ -27,6 +28,7 @@ export default function Toolbar({
       id: 'marquee',
       name: 'Marquee Tool',
       shortcut: 'M',
+      hasFlyout: true,
       icon: (
         <rect x="3.5" y="4.5" width="17" height="15" rx="1" strokeDasharray="3 3" />
       )
@@ -35,14 +37,29 @@ export default function Toolbar({
       id: 'lasso',
       name: 'Lasso Tool',
       shortcut: 'L',
+      hasFlyout: true,
       icon: (
         <path d="M7 15c-3-1.5-3.5-5.5-1.5-8C7.5 4.5 13 4 17 6.5s4 6.5 2 9c-2.5 3-7 3.5-10 1.5l-5 5" />
+      )
+    },
+    {
+      id: 'magic_wand',
+      name: 'Magic Wand Tool',
+      shortcut: 'W',
+      hasFlyout: true,
+      icon: (
+        <>
+          <path d="M15 4l5 5L7 22H2v-5L15 4z" />
+          <path d="M18.5 2.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5.5-1.5z" />
+          <path d="M9 2.5l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5.5-1z" />
+        </>
       )
     },
     {
       id: 'crop',
       name: 'Crop Tool',
       shortcut: 'C',
+      hasFlyout: false,
       icon: (
         <>
           <path d="M6 2v14a2 2 0 002 2h14" />
@@ -54,6 +71,7 @@ export default function Toolbar({
       id: 'eyedropper',
       name: 'Eyedropper Tool',
       shortcut: 'I',
+      hasFlyout: false,
       icon: (
         <>
           <path d="M19.4 4.6a2 2 0 00-2.8 0l-1.8 1.8 3.8 3.8 1.8-1.8a2 2 0 000-2.8z" />
@@ -66,6 +84,7 @@ export default function Toolbar({
       id: 'brush',
       name: 'Brush Tool',
       shortcut: 'B',
+      hasFlyout: true,
       icon: (
         <>
           <path d="M18.375 2.625a3.875 3.875 0 00-5.48 0L3.5 12.02v4.48h4.48l9.395-9.395a3.875 3.875 0 000-5.48z" />
@@ -78,6 +97,7 @@ export default function Toolbar({
       id: 'clone',
       name: 'Clone Stamp Tool',
       shortcut: 'S',
+      hasFlyout: false,
       icon: (
         <>
           <path d="M12 3a2.5 2.5 0 00-2.5 2.5v2.8A5 5 0 006 13v2h12v-2a5 5 0 00-3.5-4.7V5.5A2.5 2.5 0 0012 3z" />
@@ -89,6 +109,7 @@ export default function Toolbar({
       id: 'eraser',
       name: 'Eraser Tool',
       shortcut: 'E',
+      hasFlyout: false,
       icon: (
         <path d="M18 13l-6 6M2 20h20M5 16l8-8 6 6-8 8H5v-6z" />
       )
@@ -97,6 +118,7 @@ export default function Toolbar({
       id: 'bucket',
       name: 'Paint Bucket Tool',
       shortcut: 'G',
+      hasFlyout: true,
       icon: (
         <>
           <path d="M19 11l-8-8-8.5 8.5a2.5 2.5 0 000 3.54l3.46 3.46a2.5 2.5 0 003.54 0L17 11" />
@@ -109,6 +131,7 @@ export default function Toolbar({
       id: 'text',
       name: 'Horizontal Type Tool',
       shortcut: 'T',
+      hasFlyout: false,
       icon: (
         <>
           <path d="M4 7V4h16v3" />
@@ -119,8 +142,9 @@ export default function Toolbar({
     },
     {
       id: 'shapes',
-      name: 'Shape / Rectangle Tool',
+      name: 'Shape Tool',
       shortcut: 'U',
+      hasFlyout: true,
       icon: (
         <rect x="4" y="4" width="16" height="16" rx="2" />
       )
@@ -129,6 +153,7 @@ export default function Toolbar({
       id: 'hand',
       name: 'Hand Tool',
       shortcut: 'H',
+      hasFlyout: false,
       icon: (
         <path d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
       )
@@ -137,6 +162,7 @@ export default function Toolbar({
       id: 'zoom',
       name: 'Zoom Tool',
       shortcut: 'Z',
+      hasFlyout: false,
       icon: (
         <>
           <path d="M21 21l-4.35-4.35" />
@@ -159,7 +185,7 @@ export default function Toolbar({
   };
 
   return (
-    <aside className="w-[38px] bg-[#282828] border-r border-[#1a1a1a] flex flex-col items-center py-1.5 gap-0.5 z-20 select-none shrink-0 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <aside className="w-[36px] bg-[#282828] border-r border-[#1a1a1a] flex flex-col items-center py-1 gap-0.5 z-20 select-none shrink-0 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tools.map((tool) => {
         const isActive =
           activeTool === tool.id ||
@@ -174,14 +200,14 @@ export default function Toolbar({
             type="button"
             onClick={() => handleToolClick(tool.id)}
             title={`${tool.name} (${tool.shortcut})`}
-            className={`w-7 h-7 flex items-center justify-center rounded-[2px] transition group relative shrink-0 ${
+            className={`w-[28px] h-[28px] flex items-center justify-center rounded-[2px] transition group relative shrink-0 ${
               isActive
-                ? 'bg-[#3a3a3a] text-white border-l-2 border-[#1473e6] shadow-sm'
-                : 'text-[#a0a0a0] hover:text-[#ffffff] hover:bg-[#383838]'
+                ? 'bg-[#383838] text-white border-l-2 border-[#1473e6] shadow-sm'
+                : 'text-[#9c9c9c] hover:text-[#ffffff] hover:bg-[#343434]'
             }`}
           >
             <svg
-              className="w-[18px] h-[18px]"
+              className="w-[17px] h-[17px]"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -192,15 +218,27 @@ export default function Toolbar({
               {tool.icon}
             </svg>
 
+            {/* Small corner triangle indicator for tools with sub-tools */}
+            {tool.hasFlyout && (
+              <svg
+                className={`absolute bottom-[2px] right-[2px] w-[5px] h-[5px] fill-current ${
+                  isActive ? 'text-[#1473e6]' : 'text-zinc-500'
+                }`}
+                viewBox="0 0 6 6"
+              >
+                <polygon points="6,0 6,6 0,6" />
+              </svg>
+            )}
+
             {/* Photoshop Desktop Tooltip */}
-            <span className="absolute left-9 px-2 py-0.5 rounded-[2px] bg-[#202020] border border-[#383838] text-[10px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-100 z-50 shadow-2xl font-sans">
+            <span className="absolute left-8 px-2 py-0.5 rounded-[2px] bg-[#1c1c1c] border border-[#383838] text-[10px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-100 z-50 shadow-2xl font-sans">
               {tool.name} <span className="text-[#888]">({tool.shortcut})</span>
             </span>
           </button>
         );
       })}
 
-      <div className="w-6 h-[1px] bg-[#3a3a3a] my-1 shrink-0" />
+      <div className="w-5 h-[1px] bg-[#3a3a3a] my-1 shrink-0" />
 
       {/* Dual Color Swatch */}
       <DualColorSwatch
@@ -213,7 +251,7 @@ export default function Toolbar({
 
       {/* Brush Size Indicator */}
       <div
-        className="w-6 h-4 rounded-[1px] bg-[#202020] border border-[#383838] flex items-center justify-center text-[9px] text-zinc-400 font-mono mt-0.5 shrink-0"
+        className="w-5 h-3.5 rounded-[1px] bg-[#1c1c1c] border border-[#383838] flex items-center justify-center text-[9px] text-zinc-400 font-mono mt-0.5 shrink-0"
         title={`Brush Size: ${brushSize}px`}
       >
         {brushSize}

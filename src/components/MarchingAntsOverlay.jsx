@@ -36,7 +36,24 @@ export default function MarchingAntsOverlay({
           `}</style>
         </defs>
 
-        {selection.type === 'rect' ? (
+        {selection.type === 'path' ? (
+          <g>
+            <path
+              d={selection.pathString}
+              fill="none"
+              stroke="#000000"
+              strokeWidth="1"
+            />
+            <path
+              d={selection.pathString}
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="1"
+              strokeDasharray="4 4"
+              className="marching-ants"
+            />
+          </g>
+        ) : selection.type === 'rect' ? (
           <g>
             {/* Black base dash */}
             <rect

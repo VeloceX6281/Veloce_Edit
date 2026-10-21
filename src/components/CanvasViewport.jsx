@@ -4,12 +4,17 @@ import TransformOverlay from './TransformOverlay';
 import CropOverlay from './CropOverlay';
 import PixelRulers from './PixelRulers';
 import MarchingAntsOverlay from './MarchingAntsOverlay';
+import EyedropperLoupe from './EyedropperLoupe';
 import { getLayerContentBounds } from '../utils/transformUtils';
+import { computeMagicWandSelection } from '../utils/selectionUtils';
+import { getClippingBaseIndex, getCompositeOperation, createLiveTextLayer } from '../utils/layerUtils';
+import { rgbToHex } from '../utils/colorUtils';
 
 export default function CanvasViewport({
   activeTool,
   setActiveTool,
   brushColor,
+  setBrushColor,
   brushSize,
   shapeFillEnabled,
   shapeFillColor,
@@ -20,24 +25,39 @@ export default function CanvasViewport({
   onFitToScreen,
   filterString = 'none',
   layers,
+  setLayers,
   activeLayerId,
+  setActiveLayerId,
   layerCanvasesRef,
   pushSnapshot,
   initHistory,
   onCommitCrop,
   canvasWidth = 800,
   canvasHeight = 500,
-  // Phase 5B props
   showRulers = true,
   showGuides = true,
   guides = [],
   setGuides,
   marqueeSelection,
   setMarqueeSelection,
-  documentName = 'Untitled-1.png'
+  documentName = 'Untitled-1.psd',
+  // Tool options
+  autoSelectLayer = true,
+  showTransformControls = true,
+  brushHardness = 100,
+  brushOpacity = 100,
+  brushFlow = 100,
+  cloneSampleMode = 'current',
+  wandTolerance = 32,
+  wandContiguous = true,
+  fontFamily = 'Arial',
+  fontSize = 28,
+  fontStyle = 'Regular',
+  textAlign = 'left'
 }) {
   const previewCanvasRef = useRef(null);
   const containerRef = useRef(null);
+  const rawLayerBuffersRef = useRef({}); // Unclipped raw buffers for clipping masks
 
   // Drawing state
   const isDrawingRef = useRef(false);
@@ -52,6 +72,14 @@ export default function CanvasViewport({
   // Marquee Drag State
   const isDrawingMarqueeRef = useRef(false);
   const marqueeStartRef = useRef({ x: 0, y: 0 });
+
+  // Clone Stamp State
+  const [cloneAnchor, setCloneAnchor] = useState(null); // { x, y }
+  const cloneOffsetRef = useRef({ dx: 0, dy: 0 });
+  const cloneSourceCanvasRef = useRef(null);
+
+  // Eyedropper State
+  const [eyedropperData, setEyedropperData] = useState(null); // { x, y, data, hex }
 
   // Panning State (Spacebar or Hand Tool)
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -82,6 +110,49 @@ export default function CanvasViewport({
     }
     initHistory(layers, activeLayerId, canvasWidth, canvasHeight);
   }, []);
+
+  // Sync / Refresh Clipping Masks compositing across layers
+  const refreshClippingMasks = useCallback(() => {
+    layers.forEach((layer, index) => {
+      if (!layer.isClippingMask) return;
+
+      const baseIndex = getClippingBaseIndex(layers, index);
+      if (baseIndex === null) return;
+
+      const baseLayer = layers[baseIndex];
+      const baseCanvas = layerCanvasesRef.current[baseLayer.id];
+      const displayCanvas = layerCanvasesRef.current[layer.id];
+      const rawBuffer = rawLayerBuffersRef.current[layer.id] || displayCanvas;
+
+      if (!baseCanvas || !displayCanvas || !rawBuffer) return;
+
+      // Keep raw buffer stored
+      if (!rawLayerBuffersRef.current[layer.id]) {
+        const off = document.createElement('canvas');
+        off.width = displayCanvas.width;
+        off.height = displayCanvas.height;
+        const oCtx = off.getContext('2d');
+        oCtx.drawImage(displayCanvas, 0, 0);
+        rawLayerBuffersRef.current[layer.id] = off;
+      }
+
+      const ctx = displayCanvas.getContext('2d');
+      ctx.save();
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      // 1. Draw base layer's alpha shape:
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(baseCanvas, 0, 0);
+      // 2. Draw clipping content strictly into alpha letterforms/shape:
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.drawImage(rawLayerBuffersRef.current[layer.id], 0, 0);
+      ctx.restore();
+    });
+  }, [layers, canvasWidth, canvasHeight, layerCanvasesRef]);
+
+  // Trigger clipping mask refresh on layer structure updates
+  useEffect(() => {
+    refreshClippingMasks();
+  }, [layers, refreshClippingMasks]);
 
   // Initialize Crop Box when Crop Tool is activated
   useEffect(() => {
@@ -161,19 +232,29 @@ export default function CanvasViewport({
     };
   }, [getActiveCanvas]);
 
-  // Apply marquee clipping path to active canvas context
+  // Apply marquee or Magic Wand clipping path to active canvas context
   const applyMarqueeClip = useCallback((ctx) => {
     if (!marqueeSelection || marqueeSelection.width === 0 || marqueeSelection.height === 0) return;
 
     ctx.save();
     ctx.beginPath();
 
+    if (marqueeSelection.type === 'path' && marqueeSelection.pathString) {
+      try {
+        const p2d = new Path2D(marqueeSelection.pathString);
+        ctx.clip(p2d);
+        return;
+      } catch (err) {
+        // Fallback to bounding box clip
+      }
+    }
+
     const rx = Math.min(marqueeSelection.x, marqueeSelection.x + marqueeSelection.width);
     const ry = Math.min(marqueeSelection.y, marqueeSelection.y + marqueeSelection.height);
     const rw = Math.abs(marqueeSelection.width);
     const rh = Math.abs(marqueeSelection.height);
 
-    if (marqueeSelection.type === 'rect') {
+    if (marqueeSelection.type === 'rect' || marqueeSelection.type === 'path') {
       if (marqueeSelection.inverted) {
         ctx.rect(0, 0, canvasWidth, canvasHeight);
         ctx.rect(rx, ry, rw, rh);
@@ -198,6 +279,72 @@ export default function CanvasViewport({
       }
     }
   }, [marqueeSelection, canvasWidth, canvasHeight]);
+
+  // Composite 9x9 pixels across all visible layers for Eyedropper
+  const sampleCompositeAt = useCallback((cx, cy, size = 9) => {
+    const half = Math.floor(size / 2);
+    const sx = cx - half;
+    const sy = cy - half;
+
+    const off = document.createElement('canvas');
+    off.width = size;
+    off.height = size;
+    const oCtx = off.getContext('2d', { willReadFrequently: true });
+
+    layers.forEach((l) => {
+      if (!l.visible) return;
+      const lCanvas = layerCanvasesRef.current[l.id];
+      if (lCanvas) {
+        oCtx.save();
+        oCtx.globalAlpha = l.opacity / 100;
+        oCtx.globalCompositeOperation = getCompositeOperation(l.blendMode);
+        oCtx.drawImage(lCanvas, sx, sy, size, size, 0, 0, size, size);
+        oCtx.restore();
+      }
+    });
+
+    const imgData = oCtx.getImageData(0, 0, size, size);
+    const centerIdx = (half * size + half) * 4;
+    const r = imgData.data[centerIdx];
+    const g = imgData.data[centerIdx + 1];
+    const b = imgData.data[centerIdx + 2];
+    const hex = rgbToHex(r, g, b);
+
+    return { imgData, hex };
+  }, [layers, layerCanvasesRef]);
+
+  // Move Tool Hit-Testing for Auto-Select: Layer
+  const hitTestLayer = useCallback((x, y) => {
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const l = layers[i];
+      if (!l.visible) continue;
+
+      // Text layer bounds test
+      if (l.type === 'text' && l.textData) {
+        const td = l.textData;
+        const tw = td.width || 220;
+        const th = (td.fontSize || 28) * 1.5;
+        if (x >= td.x - 5 && x <= td.x + tw + 5 && y >= td.y - 5 && y <= td.y + th + 5) {
+          return l;
+        }
+      }
+
+      // Pixel layer non-transparent test (alpha > 10)
+      const lCanvas = rawLayerBuffersRef.current[l.id] || layerCanvasesRef.current[l.id];
+      if (lCanvas) {
+        try {
+          const ctx = lCanvas.getContext('2d', { willReadFrequently: true });
+          const alpha = ctx.getImageData(x, y, 1, 1).data[3];
+          if (alpha > 10) {
+            return l;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+    return null;
+  }, [layers, layerCanvasesRef]);
 
   // Initialize Move & Free Transform on active layer
   const startTransform = useCallback(() => {
@@ -240,14 +387,14 @@ export default function CanvasViewport({
     });
   }, [getActiveCanvas, layers, activeLayerId]);
 
-  // Automatically start transform when 'select' tool is clicked
+  // Auto-start transform if Move Tool and showTransformControls is active
   useEffect(() => {
-    if (activeTool === 'select' && !transformState) {
+    if (activeTool === 'select' && showTransformControls && !transformState) {
       startTransform();
     } else if (activeTool !== 'select' && transformState) {
       commitTransform();
     }
-  }, [activeTool]);
+  }, [activeTool, showTransformControls]);
 
   // Commit Free Transform directly to active layer
   const commitTransform = useCallback(() => {
@@ -263,11 +410,12 @@ export default function CanvasViewport({
         transformState.box.width,
         transformState.box.height
       );
+      refreshClippingMasks();
       pushSnapshot({}, 'Free Transform', 'transform');
     }
 
     setTransformState(null);
-  }, [transformState, getActiveCanvas, pushSnapshot]);
+  }, [transformState, getActiveCanvas, pushSnapshot, refreshClippingMasks]);
 
   // Cancel Free Transform
   const cancelTransform = useCallback(() => {
@@ -283,10 +431,11 @@ export default function CanvasViewport({
         transformState.origBox.width,
         transformState.origBox.height
       );
+      refreshClippingMasks();
     }
 
     setTransformState(null);
-  }, [transformState, getActiveCanvas]);
+  }, [transformState, getActiveCanvas, refreshClippingMasks]);
 
   // Render shape on context
   const renderShape = useCallback((ctx, startX, startY, currX, currY, isShift) => {
@@ -358,7 +507,103 @@ export default function CanvasViewport({
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
 
-    // Zoom Tool Click
+    // 1. MOVE TOOL ('select' / 'V'): Auto-select layer
+    if (activeTool === 'select') {
+      if (autoSelectLayer) {
+        const hit = hitTestLayer(coords.x, coords.y);
+        if (hit && hit.id !== activeLayerId) {
+          if (transformState) commitTransform();
+          setActiveLayerId(hit.id);
+        }
+      }
+      return;
+    }
+
+    // 2. EYEDROPPER TOOL ('eyedropper' / 'I')
+    if (activeTool === 'eyedropper') {
+      const { hex } = sampleCompositeAt(coords.x, coords.y);
+      setBrushColor(hex);
+      return;
+    }
+
+    // 3. MAGIC WAND TOOL ('magic_wand' / 'W')
+    if (activeTool === 'magic_wand') {
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+      const ctx = activeCanvas.getContext('2d', { willReadFrequently: true });
+      const imgData = ctx.getImageData(0, 0, activeCanvas.width, activeCanvas.height);
+      const wandSel = computeMagicWandSelection({
+        imageData: imgData,
+        startX: coords.x,
+        startY: coords.y,
+        tolerance: wandTolerance,
+        contiguous: wandContiguous
+      });
+      setMarqueeSelection(wandSel);
+      return;
+    }
+
+    // 4. CLONE STAMP TOOL ('clone' / 'S')
+    if (activeTool === 'clone') {
+      if (e.altKey) {
+        // Alt-click sets source anchor coordinate
+        setCloneAnchor({ x: coords.x, y: coords.y });
+
+        // Capture source canvas
+        const sourceCanvas = cloneSampleMode === 'all'
+          ? (() => {
+              const comp = document.createElement('canvas');
+              comp.width = canvasWidth;
+              comp.height = canvasHeight;
+              const cCtx = comp.getContext('2d');
+              layers.forEach((l) => {
+                if (!l.visible) return;
+                const lc = layerCanvasesRef.current[l.id];
+                if (lc) cCtx.drawImage(lc, 0, 0);
+              });
+              return comp;
+            })()
+          : getActiveCanvas();
+
+        cloneSourceCanvasRef.current = sourceCanvas;
+        return;
+      }
+
+      if (!cloneAnchor || !cloneSourceCanvasRef.current) {
+        alert('Please Alt+Click to define a source point for the Clone Stamp.');
+        return;
+      }
+
+      isDrawingRef.current = true;
+      cloneOffsetRef.current = {
+        dx: cloneAnchor.x - coords.x,
+        dy: cloneAnchor.y - coords.y
+      };
+
+      const activeCanvas = getActiveCanvas();
+      if (activeCanvas && cloneSourceCanvasRef.current) {
+        const ctx = activeCanvas.getContext('2d');
+        ctx.save();
+        applyMarqueeClip(ctx);
+        ctx.globalAlpha = brushOpacity / 100;
+        ctx.beginPath();
+        ctx.arc(coords.x, coords.y, Math.max(1, brushSize / 2), 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(
+          cloneSourceCanvasRef.current,
+          cloneOffsetRef.current.dx,
+          cloneOffsetRef.current.dy
+        );
+        ctx.restore();
+      }
+
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
+
+    // 5. ZOOM TOOL
     if (activeTool === 'zoom') {
       if (e.altKey) {
         setZoom((z) => Math.max(10, Math.round(z / 1.25)));
@@ -368,8 +613,8 @@ export default function CanvasViewport({
       return;
     }
 
-    // Marquee Selection Tool Start
-    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee') {
+    // 6. MARQUEE SELECTION TOOLS
+    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee' || activeTool === 'lasso') {
       isDrawingMarqueeRef.current = true;
       marqueeStartRef.current = coords;
       setMarqueeSelection({
@@ -386,15 +631,36 @@ export default function CanvasViewport({
       return;
     }
 
-    // Text Tool
+    // 7. TEXT TOOL: check if existing text layer clicked, or create new
     if (activeTool === 'text') {
-      setTextConfig({
-        visible: true,
-        x: coords.x,
-        y: coords.y,
-        fontSize: Math.max(16, brushSize * 3),
-        color: brushColor
-      });
+      const hit = hitTestLayer(coords.x, coords.y);
+      if (hit && hit.type === 'text' && hit.textData) {
+        setTextConfig({
+          visible: true,
+          layerId: hit.id,
+          x: hit.textData.x,
+          y: hit.textData.y,
+          fontSize: hit.textData.fontSize,
+          fontFamily: hit.textData.fontFamily,
+          color: hit.textData.color,
+          text: hit.textData.text,
+          isBold: hit.textData.isBold,
+          isItalic: hit.textData.isItalic
+        });
+      } else {
+        setTextConfig({
+          visible: true,
+          layerId: null,
+          x: coords.x,
+          y: coords.y,
+          fontSize: fontSize || 28,
+          fontFamily: fontFamily || 'Arial',
+          color: brushColor,
+          text: '',
+          isBold: fontStyle === 'Bold',
+          isItalic: fontStyle === 'Italic'
+        });
+      }
       return;
     }
 
@@ -402,7 +668,7 @@ export default function CanvasViewport({
       setTextConfig(null);
     }
 
-    // Shapes Tool
+    // 8. SHAPES TOOL
     if (activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') {
       isDrawingShapeRef.current = true;
       shapeStartRef.current = coords;
@@ -412,7 +678,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // Paint Bucket
+    // 9. PAINT BUCKET
     if (activeTool === 'bucket') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -425,11 +691,12 @@ export default function CanvasViewport({
       if (marqueeSelection) ctx.restore();
       ctx.restore();
 
+      refreshClippingMasks();
       pushSnapshot({}, 'Paint Bucket Fill', 'bucket');
       return;
     }
 
-    // Freehand Brush & Eraser (with marquee clipping)
+    // 10. BRUSH & ERASER
     if (activeTool === 'brush' || activeTool === 'eraser') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -445,6 +712,7 @@ export default function CanvasViewport({
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.lineWidth = brushSize;
+      ctx.globalAlpha = (brushOpacity / 100) * (brushFlow / 100);
 
       const currentLayerObj = layers.find((l) => l.id === activeLayerId);
       const isBackground = currentLayerObj?.isBackground;
@@ -482,6 +750,19 @@ export default function CanvasViewport({
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
     setCursorPos({ x: coords.x, y: coords.y, inside: true });
+
+    // Live Eyedropper Loupe Preview
+    if (activeTool === 'eyedropper') {
+      const sampled = sampleCompositeAt(coords.x, coords.y);
+      setEyedropperData({
+        x: coords.x,
+        y: coords.y,
+        data: sampled.imgData,
+        hex: sampled.hex
+      });
+    } else if (eyedropperData) {
+      setEyedropperData(null);
+    }
 
     // Marquee Dragging with Shift 1:1 Aspect Ratio constraint
     if (isDrawingMarqueeRef.current) {
@@ -521,6 +802,27 @@ export default function CanvasViewport({
         coords.y,
         e.shiftKey
       );
+      return;
+    }
+
+    // Clone Stamp stroke
+    if (isDrawingRef.current && activeTool === 'clone' && cloneSourceCanvasRef.current) {
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+      const ctx = activeCanvas.getContext('2d');
+
+      ctx.save();
+      applyMarqueeClip(ctx);
+      ctx.globalAlpha = (brushOpacity / 100) * (brushFlow / 100);
+      ctx.beginPath();
+      ctx.arc(coords.x, coords.y, Math.max(1, brushSize / 2), 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(
+        cloneSourceCanvasRef.current,
+        cloneOffsetRef.current.dx,
+        cloneOffsetRef.current.dy
+      );
+      ctx.restore();
       return;
     }
 
@@ -570,6 +872,14 @@ export default function CanvasViewport({
       return;
     }
 
+    // Commit Clone Stamp stroke
+    if (isDrawingRef.current && activeTool === 'clone') {
+      isDrawingRef.current = false;
+      refreshClippingMasks();
+      pushSnapshot({}, 'Clone Stamp', 'clone');
+      return;
+    }
+
     // Commit Shape
     if (isDrawingShapeRef.current) {
       const coords = getCanvasCoords(e);
@@ -590,6 +900,7 @@ export default function CanvasViewport({
           coords.y,
           e.shiftKey
         );
+        refreshClippingMasks();
         const actionLabel = activeTool === 'circle' ? 'Circle Shape' : 'Rectangle Shape';
         pushSnapshot({}, actionLabel, activeTool === 'circle' ? 'circle' : 'rectangle');
       }
@@ -620,6 +931,7 @@ export default function CanvasViewport({
         if (marqueeSelection) ctx.restore();
         ctx.restore();
 
+        refreshClippingMasks();
         const actionLabel = activeTool === 'eraser' ? 'Eraser Stroke' : 'Brush Stroke';
         pushSnapshot({}, actionLabel, activeTool === 'eraser' ? 'eraser' : 'brush');
       }
@@ -629,32 +941,101 @@ export default function CanvasViewport({
     }
   };
 
-  // Text Commit
-  const handleCommitText = (textData) => {
-    const activeCanvas = getActiveCanvas();
-    if (!activeCanvas) return;
-    const ctx = activeCanvas.getContext('2d');
+  // Double Click handler (Move Tool double-click opens Text Editor)
+  const handleDoubleClick = (e) => {
+    if (activeTool === 'select') {
+      const coords = getCanvasCoords(e);
+      const hit = hitTestLayer(coords.x, coords.y);
+      if (hit && hit.type === 'text' && hit.textData) {
+        setTextConfig({
+          visible: true,
+          layerId: hit.id,
+          x: hit.textData.x,
+          y: hit.textData.y,
+          fontSize: hit.textData.fontSize,
+          fontFamily: hit.textData.fontFamily,
+          color: hit.textData.color,
+          text: hit.textData.text,
+          isBold: hit.textData.isBold,
+          isItalic: hit.textData.isItalic
+        });
+      }
+    }
+  };
 
-    ctx.save();
-    applyMarqueeClip(ctx);
+  // Text Commit (Creates/Updates Dedicated Live Text Layer)
+  const handleCommitText = (data) => {
+    const textSnippet = data.text.trim().slice(0, 16);
 
-    const stylePrefix = textData.isItalic ? 'italic ' : '';
-    const weightPrefix = textData.isBold ? 'bold ' : '';
-    ctx.font = `${stylePrefix}${weightPrefix}${textData.fontSize}px ${textData.fontFamily}`;
-    ctx.fillStyle = textData.color;
-    ctx.textBaseline = 'top';
+    if (data.layerId) {
+      // Re-editing existing text layer
+      const targetCanvas = layerCanvasesRef.current[data.layerId];
+      if (targetCanvas) {
+        const ctx = targetCanvas.getContext('2d');
+        ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
 
-    const lines = textData.text.split('\n');
-    const lineHeight = textData.fontSize * 1.25;
+        const stylePrefix = data.isItalic ? 'italic ' : '';
+        const weightPrefix = data.isBold ? 'bold ' : '';
+        ctx.font = `${stylePrefix}${weightPrefix}${data.fontSize}px ${data.fontFamily}`;
+        ctx.fillStyle = data.color;
+        ctx.textBaseline = 'top';
 
-    lines.forEach((line, index) => {
-      ctx.fillText(line, textData.x, textData.y + index * lineHeight);
-    });
+        const lines = data.text.split('\n');
+        const lineHeight = data.fontSize * 1.25;
+        lines.forEach((line, index) => {
+          ctx.fillText(line, data.x, data.y + index * lineHeight);
+        });
+      }
 
-    if (marqueeSelection) ctx.restore();
-    ctx.restore();
+      setLayers((prev) =>
+        prev.map((l) =>
+          l.id === data.layerId
+            ? {
+                ...l,
+                name: `Text: ${textSnippet}`,
+                textData: { ...l.textData, ...data }
+              }
+            : l
+        )
+      );
 
-    pushSnapshot({}, 'Text Stamp', 'text');
+      refreshClippingMasks();
+      pushSnapshot({}, `Edit Text: ${textSnippet}`, 'text');
+    } else {
+      // Creating a new dedicated Text Layer
+      const newTextLayer = createLiveTextLayer(data);
+      const newLayers = [...layers, newTextLayer];
+
+      setLayers(newLayers);
+      setActiveLayerId(newTextLayer.id);
+
+      setTimeout(() => {
+        const canvas = layerCanvasesRef.current[newTextLayer.id];
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          const stylePrefix = data.isItalic ? 'italic ' : '';
+          const weightPrefix = data.isBold ? 'bold ' : '';
+          ctx.font = `${stylePrefix}${weightPrefix}${data.fontSize}px ${data.fontFamily}`;
+          ctx.fillStyle = data.color;
+          ctx.textBaseline = 'top';
+
+          const lines = data.text.split('\n');
+          const lineHeight = data.fontSize * 1.25;
+          lines.forEach((line, index) => {
+            ctx.fillText(line, data.x, data.y + index * lineHeight);
+          });
+        }
+        refreshClippingMasks();
+        pushSnapshot(
+          { layers: newLayers, activeLayerId: newTextLayer.id },
+          `Text: ${textSnippet}`,
+          'text'
+        );
+      }, 40);
+    }
+
     setTextConfig(null);
   };
 
@@ -676,6 +1057,7 @@ export default function CanvasViewport({
       case 'circle':
       case 'clone':
       case 'eyedropper':
+      case 'magic_wand':
         return 'cursor-crosshair';
       case 'text':
         return 'cursor-text';
@@ -692,13 +1074,13 @@ export default function CanvasViewport({
   const activeLayerName = layers.find((l) => l.id === activeLayerId)?.name || 'Layer';
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-[#1f1f1f] select-none">
-      {/* Photoshop Document Tab Bar */}
-      <div className="h-7 bg-[#232323] border-b border-[#181818] flex items-center px-2 z-10 shrink-0">
-        <div className="flex items-center gap-2 bg-[#1f1f1f] text-zinc-200 border-t-2 border-[#1473e6] px-3 py-1 text-[11px] font-sans border-r border-[#181818] border-l border-[#181818] rounded-t-[2px] shadow-sm">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#1e1e1e] select-none">
+      {/* 1. Authentic Photoshop Tab Strip Directly Above Artboard */}
+      <div className="h-[26px] bg-[#282828] border-b border-[#181818] flex items-center px-2 z-10 shrink-0">
+        <div className="flex items-center gap-2 bg-[#1e1e1e] text-zinc-200 border-t-2 border-[#1473e6] px-3 py-1 text-[11px] font-sans border-r border-[#181818] border-l border-[#181818] rounded-t-[2px] shadow-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6] inline-block" />
           <span className="font-medium text-zinc-100">{documentName}</span>
-          <span className="text-[#888]">@ {zoom}% (RGB/8)</span>
+          <span className="text-[#888]">@ {zoom}% (RGB/8#)</span>
           <button
             type="button"
             className="text-zinc-500 hover:text-zinc-200 ml-1.5 text-xs hover:bg-[#383838] rounded-[2px] w-4 h-4 flex items-center justify-center leading-none"
@@ -709,10 +1091,11 @@ export default function CanvasViewport({
         </div>
       </div>
 
+      {/* 2. Central Artboard Workbench */}
       <main
         ref={containerRef}
         onWheel={handleWheel}
-        className="flex-1 bg-[#1f1f1f] relative overflow-hidden flex items-center justify-center p-8 select-none"
+        className="flex-1 bg-[#1e1e1e] relative overflow-hidden flex items-center justify-center p-8 select-none"
       >
         {/* Pixel Rulers (Framing Top & Left Viewport) */}
         <PixelRulers
@@ -728,154 +1111,201 @@ export default function CanvasViewport({
           setGuides={setGuides}
         />
 
-        {/* Canvas Viewport Container with Smooth Zoom & Pan Transforms */}
+        {/* Artboard Container with Authentic Photoshop Drop Shadow & Dark Checkerboard */}
         <div
-          className="relative shadow-[0_0_25px_rgba(0,0,0,0.65)] border border-[#2d2d2d] bg-[#1e2029] overflow-hidden transition-transform duration-75 origin-center"
+          className="relative bg-[#232323] overflow-hidden transition-transform duration-75 origin-center"
           style={{
             width: `${canvasWidth}px`,
             height: `${canvasHeight}px`,
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`,
+            boxShadow: '0 0 25px rgba(0,0,0,0.65), 0 0 0 1px #333333'
           }}
         >
-        {/* Subtle Checkered Transparency Background */}
-        <div
-          className="absolute inset-0 bg-white"
-          style={{
-            backgroundImage: `linear-gradient(45deg, #f4f4f5 25%, transparent 25%), 
-                              linear-gradient(-45deg, #f4f4f5 25%, transparent 25%), 
-                              linear-gradient(45deg, transparent 75%, #f4f4f5 75%), 
-                              linear-gradient(-45deg, transparent 75%, #f4f4f5 75%)`,
-            backgroundSize: '16px 16px',
-            backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px'
-          }}
-        />
-
-        {/* Stacked Multi-Layer Canvases */}
-        {layers.map((layer) => (
-          <canvas
-            key={layer.id}
-            ref={(el) => {
-              if (el) layerCanvasesRef.current[layer.id] = el;
+          {/* Authentic Dark Transparency Checkerboard */}
+          <div
+            className="absolute inset-0 bg-[#232323]"
+            style={{
+              backgroundImage: `linear-gradient(45deg, #181818 25%, transparent 25%), 
+                                linear-gradient(-45deg, #181818 25%, transparent 25%), 
+                                linear-gradient(45deg, transparent 75%, #181818 75%), 
+                                linear-gradient(-45deg, transparent 75%, #181818 75%)`,
+              backgroundSize: '16px 16px',
+              backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px'
             }}
+          />
+
+          {/* Stacked Multi-Layer Canvases */}
+          {layers.map((layer) => (
+            <canvas
+              key={layer.id}
+              ref={(el) => {
+                if (el) layerCanvasesRef.current[layer.id] = el;
+              }}
+              width={canvasWidth}
+              height={canvasHeight}
+              style={{
+                display: layer.visible ? 'block' : 'none',
+                opacity: layer.opacity / 100,
+                mixBlendMode: layer.blendMode,
+                filter: filterString !== 'none' ? filterString : undefined
+              }}
+              className="absolute inset-0 block pointer-events-none"
+            />
+          ))}
+
+          {/* Live Preview Canvas for shapes and feedback */}
+          <canvas
+            ref={previewCanvasRef}
             width={canvasWidth}
             height={canvasHeight}
             style={{
-              display: layer.visible ? 'block' : 'none',
-              opacity: layer.opacity / 100,
-              mixBlendMode: layer.blendMode,
               filter: filterString !== 'none' ? filterString : undefined
             }}
-            className="absolute inset-0 block pointer-events-none"
+            className="absolute inset-0 block pointer-events-none z-30"
           />
-        ))}
 
-        {/* Live Preview Canvas for shapes and feedback */}
-        <canvas
-          ref={previewCanvasRef}
-          width={canvasWidth}
-          height={canvasHeight}
-          style={{
-            filter: filterString !== 'none' ? filterString : undefined
-          }}
-          className="absolute inset-0 block pointer-events-none z-30"
-        />
-
-        {/* Animated Marching Ants Selection Overlay */}
-        <MarchingAntsOverlay
-          selection={marqueeSelection}
-          canvasWidth={canvasWidth}
-          canvasHeight={canvasHeight}
-        />
-
-        {/* Move & Free Transform Interactive Bounding Box */}
-        {activeTool === 'select' && transformState && (
-          <TransformOverlay
-            box={transformState.box}
-            setBox={(newBox) =>
-              setTransformState((prev) => ({ ...prev, box: newBox }))
-            }
-            offscreenCanvas={transformState.offscreenCanvas}
-            onCommit={commitTransform}
-            onCancel={cancelTransform}
-            zoom={zoom}
-          />
-        )}
-
-        {/* Interactive Crop Tool Overlay */}
-        {activeTool === 'crop' && cropBox && (
-          <CropOverlay
+          {/* Animated Marching Ants Selection Overlay */}
+          <MarchingAntsOverlay
+            selection={marqueeSelection}
             canvasWidth={canvasWidth}
             canvasHeight={canvasHeight}
-            cropBox={cropBox}
-            setCropBox={setCropBox}
-            onCommitCrop={() => onCommitCrop(cropBox)}
-            onCancel={() => setActiveTool('select')}
-            zoom={zoom}
           />
-        )}
 
-        {/* Interaction Surface */}
-        <div
-          className={`absolute inset-0 z-20 ${getCursorStyle()}`}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={(e) => {
-            setCursorPos((prev) => ({ ...prev, inside: false }));
-            handlePointerUp(e);
-          }}
-        />
+          {/* Clone Stamp Anchor Crosshair */}
+          {activeTool === 'clone' && cloneAnchor && (
+            <div
+              style={{
+                left: `${cloneAnchor.x}px`,
+                top: `${cloneAnchor.y}px`
+              }}
+              className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30 flex items-center justify-center text-[#31a8ff] drop-shadow-md"
+            >
+              <div className="w-full h-[1px] bg-[#31a8ff] absolute" />
+              <div className="h-full w-[1px] bg-[#31a8ff] absolute" />
+              <div className="w-2.5 h-2.5 rounded-full border border-[#31a8ff] absolute" />
+            </div>
+          )}
 
-        {/* Click-to-place Text Overlay */}
-        {textConfig && textConfig.visible && (
-          <TextOverlay
-            config={textConfig}
-            onCommit={handleCommitText}
-            onCancel={() => setTextConfig(null)}
-            zoom={zoom}
+          {/* Eyedropper Magnifying Loupe (9x9 grid) */}
+          {activeTool === 'eyedropper' && eyedropperData && (
+            <EyedropperLoupe
+              x={eyedropperData.x}
+              y={eyedropperData.y}
+              compositeData={eyedropperData.data}
+              currentColorHex={eyedropperData.hex}
+              visible={cursorPos.inside}
+            />
+          )}
+
+          {/* Move & Free Transform Interactive Bounding Box */}
+          {activeTool === 'select' && showTransformControls && transformState && (
+            <TransformOverlay
+              box={transformState.box}
+              setBox={(newBox) =>
+                setTransformState((prev) => ({ ...prev, box: newBox }))
+              }
+              offscreenCanvas={transformState.offscreenCanvas}
+              onCommit={commitTransform}
+              onCancel={cancelTransform}
+              zoom={zoom}
+            />
+          )}
+
+          {/* Interactive Crop Tool Overlay */}
+          {activeTool === 'crop' && cropBox && (
+            <CropOverlay
+              canvasWidth={canvasWidth}
+              canvasHeight={canvasHeight}
+              cropBox={cropBox}
+              setCropBox={setCropBox}
+              onCommitCrop={() => onCommitCrop(cropBox)}
+              onCancel={() => setActiveTool('select')}
+              zoom={zoom}
+            />
+          )}
+
+          {/* Interaction Surface */}
+          <div
+            className={`absolute inset-0 z-20 ${getCursorStyle()}`}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onDoubleClick={handleDoubleClick}
+            onPointerLeave={(e) => {
+              setCursorPos((prev) => ({ ...prev, inside: false }));
+              setEyedropperData(null);
+              handlePointerUp(e);
+            }}
           />
-        )}
-      </div>
 
-      {/* Floating Canvas Status Badge */}
-      <div className="absolute bottom-3 left-8 bg-[#222]/90 border border-[#383838] rounded-[2px] px-3 py-1 flex items-center gap-3 text-[11px] text-zinc-300 shadow-xl z-20 font-sans backdrop-blur-[2px]">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6]" />
-          <span>
-            Layer: <strong className="text-zinc-100">{activeLayerName}</strong>
-          </span>
+          {/* Click-to-place / Re-editable Text Overlay */}
+          {textConfig && textConfig.visible && (
+            <TextOverlay
+              config={textConfig}
+              onCommit={handleCommitText}
+              onCancel={() => setTextConfig(null)}
+              zoom={zoom}
+            />
+          )}
         </div>
-        <span className="text-[#383838]">|</span>
-        <span>Tool: <strong className="text-zinc-100 capitalize">{activeTool}</strong></span>
-        <span className="text-[#383838]">|</span>
-        <span className="font-mono text-zinc-300">{canvasWidth} × {canvasHeight} px</span>
-        <span className="text-[#383838]">|</span>
-        <span>Zoom: <strong className="text-[#31a8ff]">{zoom}%</strong></span>
-        {cursorPos.inside && (
-          <>
-            <span className="text-[#383838]">|</span>
-            <span className="font-mono text-[10px] text-zinc-300">
-              X: {cursorPos.x}, Y: {cursorPos.y}
+      </main>
+
+      {/* 3. Authentic Photoshop Desktop Status Bar (Height 22px at bottom) */}
+      <footer className="h-[22px] bg-[#222222] border-t border-[#181818] flex items-center justify-between px-3 text-[10px] text-zinc-400 z-10 shrink-0 select-none font-sans">
+        {/* Left Section: Zoom %, Dimensions, Resolution, Color Mode, Active Layer */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="10"
+              max="500"
+              value={zoom}
+              onChange={(e) => setZoom(Math.max(10, Math.min(500, Number(e.target.value))))}
+              className="w-8 bg-[#181818] border border-[#3a3a3a] px-1 py-0 text-zinc-200 text-right font-mono focus:outline-none rounded-[1px]"
+            />
+            <span className="text-zinc-500">%</span>
+          </div>
+
+          <span className="text-[#3a3a3a]">|</span>
+          <span className="font-mono text-zinc-300">{canvasWidth} × {canvasHeight} px</span>
+
+          <span className="text-[#3a3a3a]">|</span>
+          <span>72 ppi</span>
+
+          <span className="text-[#3a3a3a]">|</span>
+          <span>RGB/8</span>
+
+          <span className="text-[#3a3a3a]">|</span>
+          <div className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6]" />
+            <span>Layer: <strong className="text-zinc-200 font-medium">{activeLayerName}</strong></span>
+          </div>
+        </div>
+
+        {/* Right Section: Cursor coords, Selection status, Fit Button */}
+        <div className="flex items-center gap-3">
+          {cursorPos.inside && (
+            <span className="font-mono text-zinc-400">
+              X: {cursorPos.x} px, Y: {cursorPos.y} px
             </span>
-          </>
-        )}
-        {marqueeSelection && (
-          <>
-            <span className="text-[#383838]">|</span>
-            <span className="text-[10px] text-[#31a8ff] font-medium">
+          )}
+
+          {marqueeSelection && (
+            <span className="text-[#31a8ff] font-medium">
               Selection Active
             </span>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={onFitToScreen}
-          className="ml-1 text-[10px] text-[#31a8ff] hover:text-white font-medium cursor-pointer"
-        >
-          Fit (Ctrl+0)
-        </button>
-      </div>
-    </main>
+          )}
+
+          <button
+            type="button"
+            onClick={onFitToScreen}
+            className="text-[#31a8ff] hover:text-white font-medium cursor-pointer transition"
+            title="Fit Canvas to Screen (Ctrl+0)"
+          >
+            Fit (Ctrl+0)
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -11,7 +11,8 @@ import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
 import {
   createInitialBackgroundLayer,
-  createNewLayer
+  createNewLayer,
+  getCompositeOperation
 } from './utils/layerUtils';
 import { cropCanvas } from './utils/transformUtils';
 
@@ -24,7 +25,7 @@ export default function App() {
   const [zoom, setZoom] = useState(100);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  // Rulers & Alignment Guides (Phase 5B)
+  // Rulers & Alignment Guides
   const [showRulers, setShowRulers] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
   const [guides, setGuides] = useState([
@@ -32,7 +33,7 @@ export default function App() {
     { id: 'g_default_2', type: 'vertical', pos: 400 }
   ]);
 
-  // Marquee Selection State (Phase 5B)
+  // Marquee Selection State
   const [marqueeSelection, setMarqueeSelection] = useState(null);
 
   // Authentic Dual Color Swatches (Photoshop Default: Black & White)
@@ -48,9 +49,23 @@ export default function App() {
   // Studio & Tool State
   const [activeTool, setActiveTool] = useState('brush');
   const [activeTab, setActiveTab] = useState('layers');
-  const [brushSize, setBrushSize] = useState(8);
+  const [brushSize, setBrushSize] = useState(12);
   const [shapeFillEnabled, setShapeFillEnabled] = useState(false);
   const [shapeFillColor, setShapeFillColor] = useState('#1473e6');
+
+  // Tool Options States
+  const [autoSelectLayer, setAutoSelectLayer] = useState(true);
+  const [showTransformControls, setShowTransformControls] = useState(true);
+  const [brushHardness, setBrushHardness] = useState(100);
+  const [brushOpacity, setBrushOpacity] = useState(100);
+  const [brushFlow, setBrushFlow] = useState(100);
+  const [cloneSampleMode, setCloneSampleMode] = useState('current');
+  const [wandTolerance, setWandTolerance] = useState(32);
+  const [wandContiguous, setWandContiguous] = useState(true);
+  const [fontFamily, setFontFamily] = useState('Arial');
+  const [fontSize, setFontSize] = useState(32);
+  const [fontStyle, setFontStyle] = useState('Regular');
+  const [textAlign, setTextAlign] = useState('left');
 
   // Filter & Adjustment Pipeline State
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
@@ -213,8 +228,12 @@ export default function App() {
     if (!activeLayer) return;
 
     const duplicateLayer = createNewLayer(`${activeLayer.name} Copy`);
-    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+    duplicateLayer.type = activeLayer.type;
+    duplicateLayer.textData = activeLayer.textData ? { ...activeLayer.textData } : undefined;
+    duplicateLayer.blendMode = activeLayer.blendMode;
+    duplicateLayer.opacity = activeLayer.opacity;
 
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
     const newLayers = [...layers];
     newLayers.splice(activeIndex + 1, 0, duplicateLayer);
 
@@ -288,6 +307,144 @@ export default function App() {
       return updated;
     });
   }, [pushSnapshot]);
+
+  // Layer Operations: Rename Layer
+  const handleChangeLayerName = useCallback((layerId, newName) => {
+    setLayers((prev) => {
+      const updated = prev.map((l) => (l.id === layerId ? { ...l, name: newName } : l));
+      pushSnapshot({ layers: updated }, `Rename Layer: ${newName}`, 'layer');
+      return updated;
+    });
+  }, [pushSnapshot]);
+
+  // Layer Operations: Create / Release Clipping Mask (Ctrl+Alt+G)
+  const handleToggleClippingMask = useCallback((targetLayerId = null) => {
+    const idToToggle = targetLayerId || activeLayerId;
+    const targetIndex = layers.findIndex((l) => l.id === idToToggle);
+    if (targetIndex <= 0) return; // Cannot clip bottom / background layer
+
+    const updatedLayers = layers.map((l, idx) => {
+      if (idx === targetIndex) {
+        return { ...l, isClippingMask: !l.isClippingMask };
+      }
+      return l;
+    });
+
+    const isNowClipping = updatedLayers[targetIndex].isClippingMask;
+    setLayers(updatedLayers);
+    pushSnapshot(
+      { layers: updatedLayers },
+      isNowClipping ? 'Create Clipping Mask' : 'Release Clipping Mask',
+      'layer'
+    );
+  }, [layers, activeLayerId, pushSnapshot]);
+
+  // Layer Operations: Merge Down (Ctrl+E)
+  const handleMergeDown = useCallback(() => {
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+    if (activeIndex <= 0) return; // Cannot merge bottom layer down
+
+    const targetIndex = activeIndex - 1;
+    const activeLayer = layers[activeIndex];
+    const targetLayer = layers[targetIndex];
+
+    const topCanvas = layerCanvasesRef.current[activeLayer.id];
+    const bottomCanvas = layerCanvasesRef.current[targetLayer.id];
+
+    if (topCanvas && bottomCanvas) {
+      const bCtx = bottomCanvas.getContext('2d');
+      bCtx.save();
+      bCtx.globalAlpha = activeLayer.opacity / 100;
+      bCtx.globalCompositeOperation = getCompositeOperation(activeLayer.blendMode);
+      bCtx.drawImage(topCanvas, 0, 0);
+      bCtx.restore();
+    }
+
+    delete layerCanvasesRef.current[activeLayer.id];
+
+    const newLayers = layers.filter((l) => l.id !== activeLayer.id);
+    setLayers(newLayers);
+    setActiveLayerId(targetLayer.id);
+
+    pushSnapshot(
+      { layers: newLayers, activeLayerId: targetLayer.id },
+      'Merge Down',
+      'layer'
+    );
+  }, [layers, activeLayerId, pushSnapshot]);
+
+  // Layer Operations: Flatten Image
+  const handleFlattenImage = useCallback(() => {
+    if (layers.length <= 1) return;
+
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = canvasWidth;
+    bgCanvas.height = canvasHeight;
+    const ctx = bgCanvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    layers.forEach((l) => {
+      if (!l.visible) return;
+      const lCanvas = layerCanvasesRef.current[l.id];
+      if (lCanvas) {
+        ctx.save();
+        ctx.globalAlpha = l.opacity / 100;
+        ctx.globalCompositeOperation = getCompositeOperation(l.blendMode);
+        ctx.drawImage(lCanvas, 0, 0);
+        ctx.restore();
+      }
+    });
+
+    const flattenedBg = createInitialBackgroundLayer();
+    Object.keys(layerCanvasesRef.current).forEach((k) => {
+      if (k !== flattenedBg.id) delete layerCanvasesRef.current[k];
+    });
+
+    const destCanvas = layerCanvasesRef.current[flattenedBg.id] || document.createElement('canvas');
+    destCanvas.width = canvasWidth;
+    destCanvas.height = canvasHeight;
+    const dCtx = destCanvas.getContext('2d');
+    dCtx.drawImage(bgCanvas, 0, 0);
+    layerCanvasesRef.current[flattenedBg.id] = destCanvas;
+
+    const newLayers = [flattenedBg];
+    setLayers(newLayers);
+    setActiveLayerId(flattenedBg.id);
+
+    pushSnapshot(
+      { layers: newLayers, activeLayerId: flattenedBg.id },
+      'Flatten Image',
+      'layer'
+    );
+  }, [layers, canvasWidth, canvasHeight, pushSnapshot]);
+
+  // Project: Save Project (.psd.json)
+  const handleSaveProject = useCallback(() => {
+    const projectData = {
+      appName: 'VeloceEdit',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      canvasWidth,
+      canvasHeight,
+      layers: layers.map((l) => {
+        const c = layerCanvasesRef.current[l.id];
+        return {
+          ...l,
+          dataUrl: c ? c.toDataURL('image/png') : null
+        };
+      })
+    };
+
+    const jsonStr = JSON.stringify(projectData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Untitled-1.psd.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [canvasWidth, canvasHeight, layers]);
 
   // Clear Active Layer
   const handleClearActiveLayer = useCallback(() => {
@@ -426,15 +583,39 @@ export default function App() {
     setAdjustments(DEFAULT_ADJUSTMENTS);
   }, []);
 
-  // Global Keyboard Shortcuts (Ctrl+R = Rulers, Ctrl+; = Guides, Ctrl+D = Deselect, D = Default Colors, X = Swap)
+  // Global Keyboard Shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
 
+      // Ctrl + Alt shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.altKey) {
+        if (e.key.toLowerCase() === 'g') {
+          e.preventDefault();
+          handleToggleClippingMask();
+        }
+        return;
+      }
+
       // Ctrl shortcuts
       if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === 'r') {
+        if (e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          undo();
+        } else if (e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          redo();
+        } else if (e.key.toLowerCase() === 't') {
+          e.preventDefault();
+          setActiveTool('select');
+        } else if (e.key.toLowerCase() === 'e') {
+          e.preventDefault();
+          handleMergeDown();
+        } else if (e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          handleSaveProject();
+        } else if (e.key.toLowerCase() === 'r') {
           e.preventDefault();
           setShowRulers((prev) => !prev);
         } else if (e.key === ';' || e.code === 'Semicolon') {
@@ -471,6 +652,9 @@ export default function App() {
         case 'l':
           setActiveTool('lasso');
           break;
+        case 'w':
+          setActiveTool('magic_wand');
+          break;
         case 'i':
           setActiveTool('eyedropper');
           break;
@@ -495,9 +679,6 @@ export default function App() {
         case 'u':
           setActiveTool('rectangle');
           break;
-        case 'o':
-          setActiveTool('circle');
-          break;
         case 't':
           setActiveTool('text');
           break;
@@ -511,11 +692,20 @@ export default function App() {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [handleInvertMarquee, handleResetDefaultColors, handleSwapColors]);
+  }, [
+    handleInvertMarquee,
+    handleResetDefaultColors,
+    handleSwapColors,
+    handleToggleClippingMask,
+    handleMergeDown,
+    handleSaveProject,
+    undo,
+    redo
+  ]);
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#202020] text-zinc-200 select-none overflow-hidden font-sans">
-      {/* Studio Header Bar (Photoshop Native Menu Bar) */}
+    <div className="flex flex-col h-screen w-screen bg-[#1e1e1e] text-zinc-200 select-none overflow-hidden font-sans">
+      {/* Studio Header Bar (Photoshop Native Menu Bar, Height 28px) */}
       <Header
         zoom={zoom}
         setZoom={setZoom}
@@ -529,6 +719,11 @@ export default function App() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onAddLayer={handleAddLayer}
         onDeleteLayer={handleDeleteLayer}
+        onDuplicateLayer={handleDuplicateLayer}
+        onToggleClippingMask={handleToggleClippingMask}
+        onMergeDown={handleMergeDown}
+        onFlattenImage={handleFlattenImage}
+        onSaveProject={handleSaveProject}
         layersCount={layers.length}
         showRulers={showRulers}
         onToggleRulers={() => setShowRulers((r) => !r)}
@@ -547,10 +742,10 @@ export default function App() {
         onDeselect={() => setMarqueeSelection(null)}
         onInvertMarquee={handleInvertMarquee}
         onFreeTransform={() => setActiveTool('select')}
-        documentName="Untitled-1.png"
+        documentName="Untitled-1.psd"
       />
 
-      {/* Contextual Tool Options Bar */}
+      {/* Contextual Tool Options Bar (Height 30px) */}
       <ToolOptionsBar
         activeTool={activeTool}
         setActiveTool={setActiveTool}
@@ -572,11 +767,35 @@ export default function App() {
         onToggleGuides={() => setShowGuides((g) => !g)}
         onCommitCrop={handleCommitCrop}
         onCancelCrop={() => setActiveTool('select')}
+        autoSelectLayer={autoSelectLayer}
+        setAutoSelectLayer={setAutoSelectLayer}
+        showTransformControls={showTransformControls}
+        setShowTransformControls={setShowTransformControls}
+        brushHardness={brushHardness}
+        setBrushHardness={setBrushHardness}
+        brushOpacity={brushOpacity}
+        setBrushOpacity={setBrushOpacity}
+        brushFlow={brushFlow}
+        setBrushFlow={setBrushFlow}
+        cloneSampleMode={cloneSampleMode}
+        setCloneSampleMode={setCloneSampleMode}
+        wandTolerance={wandTolerance}
+        setWandTolerance={setWandTolerance}
+        wandContiguous={wandContiguous}
+        setWandContiguous={setWandContiguous}
+        fontFamily={fontFamily}
+        setFontFamily={setFontFamily}
+        fontSize={fontSize}
+        setFontSize={setFontSize}
+        fontStyle={fontStyle}
+        setFontStyle={setFontStyle}
+        textAlign={textAlign}
+        setTextAlign={setTextAlign}
       />
 
       {/* Main Studio Workspace */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Toolbar with Authentic Dual Color Swatch */}
+        {/* Left Toolbar (Width 36px) with Dual Color Swatch */}
         <Toolbar
           activeTool={activeTool}
           setActiveTool={setActiveTool}
@@ -588,11 +807,12 @@ export default function App() {
           brushSize={brushSize}
         />
 
-        {/* Center Multi-Layer Canvas Viewport with Rulers, Guides & Marquee */}
+        {/* Center Multi-Layer Canvas Viewport with 1:1 Photoshop Presentation */}
         <CanvasViewport
           activeTool={activeTool}
           setActiveTool={setActiveTool}
           brushColor={foregroundColor}
+          setBrushColor={setForegroundColor}
           brushSize={brushSize}
           shapeFillEnabled={shapeFillEnabled}
           shapeFillColor={shapeFillColor}
@@ -603,24 +823,37 @@ export default function App() {
           onFitToScreen={handleFitToScreen}
           filterString={filterString}
           layers={layers}
+          setLayers={setLayers}
           activeLayerId={activeLayerId}
+          setActiveLayerId={setActiveLayerId}
           layerCanvasesRef={layerCanvasesRef}
           pushSnapshot={pushSnapshot}
           initHistory={initHistory}
           onCommitCrop={handleCommitCrop}
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
-          // Phase 5B props
           showRulers={showRulers}
           showGuides={showGuides}
           guides={guides}
           setGuides={setGuides}
           marqueeSelection={marqueeSelection}
           setMarqueeSelection={setMarqueeSelection}
-          documentName="Untitled-1.png"
+          documentName="Untitled-1.psd"
+          autoSelectLayer={autoSelectLayer}
+          showTransformControls={showTransformControls}
+          brushHardness={brushHardness}
+          brushOpacity={brushOpacity}
+          brushFlow={brushFlow}
+          cloneSampleMode={cloneSampleMode}
+          wandTolerance={wandTolerance}
+          wandContiguous={wandContiguous}
+          fontFamily={fontFamily}
+          fontSize={fontSize}
+          fontStyle={fontStyle}
+          textAlign={textAlign}
         />
 
-        {/* Right Sidebar (Layers, History, Adjustments & Properties) */}
+        {/* Right Dock Panels (Width 280px) */}
         <RightSidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -639,7 +872,6 @@ export default function App() {
           onResetAdjustments={handleResetAdjustments}
           onClearCanvas={handleClearActiveLayer}
           onFillCanvas={handleFillActiveLayer}
-          // Multi-Layer props
           layers={layers}
           activeLayerId={activeLayerId}
           onSelectLayer={setActiveLayerId}
@@ -651,7 +883,9 @@ export default function App() {
           onToggleVisibility={handleToggleVisibility}
           onChangeOpacity={handleChangeOpacity}
           onChangeBlendMode={handleChangeBlendMode}
-          // Visual History Panel props
+          onChangeLayerName={handleChangeLayerName}
+          onToggleClippingMask={handleToggleClippingMask}
+          onMergeDown={handleMergeDown}
           historyList={historyList}
           currentIndex={currentIndex}
           onJumpToIndex={jumpToIndex}

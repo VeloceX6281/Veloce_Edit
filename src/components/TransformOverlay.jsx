@@ -202,22 +202,22 @@ export default function TransformOverlay({
             <span>Lock Ratio</span>
           </label>
 
-          <div className="w-[1px] h-3 bg-zinc-700" />
+          <div className="w-[1px] h-3 bg-[#3a3a3a]" />
 
           <button
             onClick={onCommit}
-            className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] flex items-center gap-1 shadow-sm transition"
+            className="px-2 py-0.5 rounded-[1px] bg-[#1473e6] hover:bg-[#0d66d0] text-white font-medium text-[10px] flex items-center gap-1 shadow-sm transition"
             title="Commit Transformation (Enter)"
           >
-            Apply
+            ✔ Apply
           </button>
 
           <button
             onClick={onCancel}
-            className="px-1.5 py-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 text-[11px] transition"
+            className="px-1.5 py-0.5 rounded-[1px] text-zinc-300 hover:text-white hover:bg-[#383838] border border-[#3a3a3a] text-[10px] transition"
             title="Cancel (Esc)"
           >
-            Cancel
+            ✖ Cancel
           </button>
         </div>
       </div>
