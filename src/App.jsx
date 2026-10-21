@@ -145,4 +145,62 @@ export default function App() {
                     <span className="w-5 h-5 rounded bg-white border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-800">
                       ⬜
                     </span>
-                    <span className="
+                    <span className="text-zinc-200 font-medium">Background</span>
+                  </div>
+                  <span className="text-zinc-400 cursor-pointer hover:text-zinc-100">👁</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4 text-xs">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between text-zinc-400">
+                    <span>Brush Size</span>
+                    <span className="text-zinc-200">{brushSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    value={brushSize}
+                    onChange={(e) => setBrushSize(Number(e.target.value))}
+                    className="w-full accent-indigo-500 cursor-pointer"
+                  />
+                </div>
+
+                <div className="h-[1px] bg-zinc-800 my-1" />
+
+                <div className="flex flex-col gap-3">
+                  <span className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">Filters</span>
+                  
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Brightness</span>
+                      <span className="text-zinc-200">100%</span>
+                    </div>
+                    <input type="range" min="0" max="200" defaultValue="100" className="w-full accent-indigo-500 cursor-pointer" />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Contrast</span>
+                      <span className="text-zinc-200">100%</span>
+                    </div>
+                    <input type="range" min="0" max="200" defaultValue="100" className="w-full accent-indigo-500 cursor-pointer" />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Blur</span>
+                      <span className="text-zinc-200">0px</span>
+                    </div>
+                    <input type="range" min="0" max="200" defaultValue="0" className="w-full accent-indigo-500 cursor-pointer" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
