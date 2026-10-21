@@ -4,61 +4,291 @@ import Toolbar from './components/Toolbar';
 import ToolOptionsBar from './components/ToolOptionsBar';
 import CanvasViewport from './components/CanvasViewport';
 import RightSidebar from './components/RightSidebar';
+import ImportImageModal from './components/ImportImageModal';
+import ExportModal from './components/ExportModal';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
+import {
+  createInitialBackgroundLayer,
+  createNewLayer,
+  cloneCanvas
+} from './utils/layerUtils';
 
 export default function App() {
+  // Canvas Dimensions
+  const [canvasWidth, setCanvasWidth] = useState(800);
+  const [canvasHeight, setCanvasHeight] = useState(500);
+
+  // Multi-Layer Architecture State
+  const [layers, setLayers] = useState([createInitialBackgroundLayer()]);
+  const [activeLayerId, setActiveLayerId] = useState('layer_background');
+  const layerCanvasesRef = useRef({});
+
   // Studio & Tool State
   const [activeTool, setActiveTool] = useState('brush');
-  const [activeTab, setActiveTab] = useState('adjustments');
+  const [activeTab, setActiveTab] = useState('layers');
   const [brushColor, setBrushColor] = useState('#6366f1');
   const [brushSize, setBrushSize] = useState(8);
   const [shapeFillEnabled, setShapeFillEnabled] = useState(false);
   const [shapeFillColor, setShapeFillColor] = useState('#6366f1');
   const [zoom, setZoom] = useState(100);
 
-  // Phase 3: Filter & Adjustment Pipeline State
+  // Filter & Adjustment Pipeline State
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
 
-  // Canvas Reference
-  const baseCanvasRef = useRef(null);
-
-  // History State Engine (Undo / Redo with snapshot buffers)
-  const {
-    canUndo,
-    canRedo,
-    pushSnapshot,
-    undo,
-    redo,
-    initHistory
-  } = useCanvasHistory(baseCanvasRef);
+  // Modals State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [pendingImageMeta, setPendingImageMeta] = useState(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Computed live filter CSS string for non-destructive GPU preview
   const filterString = getFilterCSSString(adjustments);
 
-  // Clear Canvas back to clean white artboard with history snapshot
-  const handleClearCanvas = useCallback(() => {
-    const canvas = baseCanvasRef.current;
+  // History State Engine (Multi-Layer Snapshot Buffers)
+  const handleRestoreSnapshot = useCallback((snapshot) => {
+    setLayers(snapshot.layers);
+    setActiveLayerId(snapshot.activeLayerId);
+    setCanvasWidth(snapshot.canvasWidth);
+    setCanvasHeight(snapshot.canvasHeight);
+  }, []);
+
+  const {
+    canUndo,
+    canRedo,
+    pushSnapshot,
+    initHistory,
+    undo,
+    redo
+  } = useCanvasHistory({
+    layers,
+    activeLayerId,
+    canvasWidth,
+    canvasHeight,
+    layerCanvasesRef,
+    onRestoreSnapshot: handleRestoreSnapshot
+  });
+
+  // Layer Operations: Add New Layer
+  const handleAddLayer = useCallback(() => {
+    const newLayer = createNewLayer(`Layer ${layers.length}`);
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+    const insertIndex = activeIndex >= 0 ? activeIndex + 1 : layers.length;
+
+    const newLayers = [...layers];
+    newLayers.splice(insertIndex, 0, newLayer);
+
+    setLayers(newLayers);
+    setActiveLayerId(newLayer.id);
+
+    // Record state in history after element mounts
+    setTimeout(() => {
+      pushSnapshot({ layers: newLayers, activeLayerId: newLayer.id });
+    }, 30);
+  }, [layers, activeLayerId, pushSnapshot]);
+
+  // Layer Operations: Delete Active Layer (with safeguard)
+  const handleDeleteLayer = useCallback(() => {
+    if (layers.length <= 1) return;
+
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+    const newLayers = layers.filter((l) => l.id !== activeLayerId);
+    const newActiveIndex = Math.max(0, activeIndex - 1);
+    const newActiveId = newLayers[newActiveIndex].id;
+
+    // Clean up canvas ref
+    delete layerCanvasesRef.current[activeLayerId];
+
+    setLayers(newLayers);
+    setActiveLayerId(newActiveId);
+
+    pushSnapshot({ layers: newLayers, activeLayerId: newActiveId });
+  }, [layers, activeLayerId, pushSnapshot]);
+
+  // Layer Operations: Duplicate Active Layer
+  const handleDuplicateLayer = useCallback(() => {
+    const activeLayer = layers.find((l) => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    const duplicateLayer = createNewLayer(`${activeLayer.name} Copy`);
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+
+    const newLayers = [...layers];
+    newLayers.splice(activeIndex + 1, 0, duplicateLayer);
+
+    const sourceCanvas = layerCanvasesRef.current[activeLayerId];
+
+    setLayers(newLayers);
+    setActiveLayerId(duplicateLayer.id);
+
+    setTimeout(() => {
+      const targetCanvas = layerCanvasesRef.current[duplicateLayer.id];
+      if (targetCanvas && sourceCanvas) {
+        const ctx = targetCanvas.getContext('2d');
+        ctx.drawImage(sourceCanvas, 0, 0);
+      }
+      pushSnapshot({ layers: newLayers, activeLayerId: duplicateLayer.id });
+    }, 40);
+  }, [layers, activeLayerId, pushSnapshot]);
+
+  // Layer Operations: Reorder Layers (Move Up / Down)
+  const handleMoveLayerUp = useCallback((actualIndex) => {
+    if (actualIndex >= layers.length - 1) return;
+    const newLayers = [...layers];
+    const temp = newLayers[actualIndex];
+    newLayers[actualIndex] = newLayers[actualIndex + 1];
+    newLayers[actualIndex + 1] = temp;
+
+    setLayers(newLayers);
+    pushSnapshot({ layers: newLayers });
+  }, [layers, pushSnapshot]);
+
+  const handleMoveLayerDown = useCallback((actualIndex) => {
+    if (actualIndex <= 0) return;
+    const newLayers = [...layers];
+    const temp = newLayers[actualIndex];
+    newLayers[actualIndex] = newLayers[actualIndex - 1];
+    newLayers[actualIndex - 1] = temp;
+
+    setLayers(newLayers);
+    pushSnapshot({ layers: newLayers });
+  }, [layers, pushSnapshot]);
+
+  // Layer Operations: Visibility Toggle
+  const handleToggleVisibility = useCallback((layerId) => {
+    setLayers((prev) => {
+      const updated = prev.map((l) =>
+        l.id === layerId ? { ...l, visible: !l.visible } : l
+      );
+      pushSnapshot({ layers: updated });
+      return updated;
+    });
+  }, [pushSnapshot]);
+
+  // Layer Operations: Opacity Change
+  const handleChangeOpacity = useCallback((layerId, opacity) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === layerId ? { ...l, opacity } : l))
+    );
+  }, []);
+
+  // Layer Operations: Blend Mode Change
+  const handleChangeBlendMode = useCallback((layerId, blendMode) => {
+    setLayers((prev) => {
+      const updated = prev.map((l) =>
+        l.id === layerId ? { ...l, blendMode } : l
+      );
+      pushSnapshot({ layers: updated });
+      return updated;
+    });
+  }, [pushSnapshot]);
+
+  // Clear Active Layer
+  const handleClearActiveLayer = useCallback(() => {
+    const canvas = layerCanvasesRef.current[activeLayerId];
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    pushSnapshot();
-  }, [baseCanvasRef, pushSnapshot]);
 
-  // Fill canvas with solid color
-  const handleFillCanvas = useCallback((color) => {
-    const canvas = baseCanvasRef.current;
+    const activeLayer = layers.find((l) => l.id === activeLayerId);
+    if (activeLayer?.isBackground) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    pushSnapshot();
+  }, [activeLayerId, layers, pushSnapshot]);
+
+  // Fill Active Layer
+  const handleFillActiveLayer = useCallback((color) => {
+    const canvas = layerCanvasesRef.current[activeLayerId];
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     pushSnapshot();
-  }, [baseCanvasRef, pushSnapshot]);
+  }, [activeLayerId, pushSnapshot]);
 
-  // Phase 3: Commit / Bake Adjustments into canvas pixels and record in history
+  // Image Import: Open Modal
+  const handleOpenImportModal = useCallback((meta) => {
+    setPendingImageMeta(meta);
+    setIsImportModalOpen(true);
+  }, []);
+
+  // Image Import Option A: Insert as New Layer (scaled to fit)
+  const handleInsertAsNewLayer = useCallback(() => {
+    if (!pendingImageMeta) return;
+
+    const cleanName = pendingImageMeta.name.replace(/\.[^/.]+$/, '');
+    const newLayer = createNewLayer(cleanName);
+    const newLayers = [...layers, newLayer];
+
+    setLayers(newLayers);
+    setActiveLayerId(newLayer.id);
+    setIsImportModalOpen(false);
+
+    setTimeout(() => {
+      const canvas = layerCanvasesRef.current[newLayer.id];
+      if (canvas && pendingImageMeta.imgElement) {
+        const ctx = canvas.getContext('2d');
+        const img = pendingImageMeta.imgElement;
+
+        const scale = Math.min(canvasWidth / img.width, canvasHeight / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        const x = (canvasWidth - w) / 2;
+        const y = (canvasHeight - h) / 2;
+
+        ctx.drawImage(img, x, y, w, h);
+      }
+      pushSnapshot({ layers: newLayers, activeLayerId: newLayer.id });
+      setPendingImageMeta(null);
+    }, 50);
+  }, [pendingImageMeta, layers, canvasWidth, canvasHeight, pushSnapshot]);
+
+  // Image Import Option B: Open as New Project (resize canvas to image)
+  const handleOpenAsNewProject = useCallback(() => {
+    if (!pendingImageMeta) return;
+
+    const newW = pendingImageMeta.width;
+    const newH = pendingImageMeta.height;
+
+    setCanvasWidth(newW);
+    setCanvasHeight(newH);
+
+    const bgLayer = createInitialBackgroundLayer();
+    const newLayers = [bgLayer];
+
+    setLayers(newLayers);
+    setActiveLayerId(bgLayer.id);
+    setIsImportModalOpen(false);
+
+    // Adjust zoom if the imported image is very large
+    if (newW > 1200 || newH > 800) {
+      setZoom(Math.round(Math.min(800 / newW, 500 / newH) * 100));
+    } else {
+      setZoom(100);
+    }
+
+    setTimeout(() => {
+      const canvas = layerCanvasesRef.current[bgLayer.id];
+      if (canvas && pendingImageMeta.imgElement) {
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(pendingImageMeta.imgElement, 0, 0, newW, newH);
+      }
+      pushSnapshot({
+        layers: newLayers,
+        activeLayerId: bgLayer.id,
+        canvasWidth: newW,
+        canvasHeight: newH
+      });
+      setPendingImageMeta(null);
+    }, 50);
+  }, [pendingImageMeta, pushSnapshot]);
+
+  // Phase 3: Apply Adjustments to Active Layer
   const handleApplyAdjustments = useCallback(() => {
-    const canvas = baseCanvasRef.current;
+    const canvas = layerCanvasesRef.current[activeLayerId];
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -66,33 +296,27 @@ export default function App() {
     const currentFilter = getFilterCSSString(adjustments);
     if (currentFilter === 'none') return;
 
-    // 1. Create an offscreen buffer of the current artwork
     const offscreen = document.createElement('canvas');
     offscreen.width = canvas.width;
     offscreen.height = canvas.height;
     const offCtx = offscreen.getContext('2d');
     offCtx.drawImage(canvas, 0, 0);
 
-    // 2. Clear the base canvas and draw back through native 2D context filter
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.filter = currentFilter;
     ctx.drawImage(offscreen, 0, 0);
     ctx.restore();
 
-    // 3. Reset live sliders back to default so there is no double-filter
     setAdjustments(DEFAULT_ADJUSTMENTS);
-
-    // 4. Record new pixel state into history stack for Undo / Redo
     pushSnapshot();
-  }, [baseCanvasRef, adjustments, pushSnapshot]);
+  }, [activeLayerId, adjustments, pushSnapshot]);
 
-  // Phase 3: Reset Adjustments back to default without touching canvas pixels
   const handleResetAdjustments = useCallback(() => {
     setAdjustments(DEFAULT_ADJUSTMENTS);
   }, []);
 
-  // Keyboard shortcuts for tools (B = Brush, E = Eraser, U = Rectangle, O = Circle, T = Text, G = Bucket, V = Select)
+  // Keyboard shortcuts for tools
   useEffect(() => {
     const handleToolShortcuts = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
@@ -146,10 +370,12 @@ export default function App() {
         canRedo={canRedo}
         onUndo={undo}
         onRedo={redo}
-        onClearCanvas={handleClearCanvas}
-        baseCanvasRef={baseCanvasRef}
-        pushSnapshot={pushSnapshot}
-        filterString={filterString}
+        onClearCanvas={handleClearActiveLayer}
+        onOpenImportModal={handleOpenImportModal}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
+        onAddLayer={handleAddLayer}
+        onDeleteLayer={handleDeleteLayer}
+        layersCount={layers.length}
       />
 
       {/* Contextual Tool Options Bar */}
@@ -176,7 +402,7 @@ export default function App() {
           brushSize={brushSize}
         />
 
-        {/* Center Canvas Viewport */}
+        {/* Center Multi-Layer Canvas Viewport */}
         <CanvasViewport
           activeTool={activeTool}
           brushColor={brushColor}
@@ -185,14 +411,16 @@ export default function App() {
           shapeFillColor={shapeFillColor}
           zoom={zoom}
           filterString={filterString}
-          baseCanvasRef={baseCanvasRef}
+          layers={layers}
+          activeLayerId={activeLayerId}
+          layerCanvasesRef={layerCanvasesRef}
           pushSnapshot={pushSnapshot}
           initHistory={initHistory}
-          canvasWidth={800}
-          canvasHeight={500}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
         />
 
-        {/* Right Sidebar (Adjustments, Properties & Layers) */}
+        {/* Right Sidebar (Layers, Adjustments & Properties) */}
         <RightSidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -209,14 +437,52 @@ export default function App() {
           setAdjustments={setAdjustments}
           onApplyAdjustments={handleApplyAdjustments}
           onResetAdjustments={handleResetAdjustments}
-          onClearCanvas={handleClearCanvas}
-          onFillCanvas={handleFillCanvas}
+          onClearCanvas={handleClearActiveLayer}
+          onFillCanvas={handleFillActiveLayer}
+          // Multi-Layer props
+          layers={layers}
+          activeLayerId={activeLayerId}
+          onSelectLayer={setActiveLayerId}
+          onAddLayer={handleAddLayer}
+          onDeleteLayer={handleDeleteLayer}
+          onDuplicateLayer={handleDuplicateLayer}
+          onMoveLayerUp={handleMoveLayerUp}
+          onMoveLayerDown={handleMoveLayerDown}
+          onToggleVisibility={handleToggleVisibility}
+          onChangeOpacity={handleChangeOpacity}
+          onChangeBlendMode={handleChangeBlendMode}
+          // History props
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
         />
       </div>
+
+      {/* Local Image Import Modal */}
+      <ImportImageModal
+        isOpen={isImportModalOpen}
+        imageMeta={pendingImageMeta}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+        onInsertAsNewLayer={handleInsertAsNewLayer}
+        onOpenAsNewProject={handleOpenAsNewProject}
+        onCancel={() => {
+          setIsImportModalOpen(false);
+          setPendingImageMeta(null);
+        }}
+      />
+
+      {/* High-Resolution Multi-Format Export Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        layers={layers}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+        layerCanvasesRef={layerCanvasesRef}
+        filterString={filterString}
+      />
     </div>
   );
 }

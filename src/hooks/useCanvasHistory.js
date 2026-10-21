@@ -1,100 +1,151 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 
 /**
- * Hook to manage Canvas Undo / Redo history state stack using snapshot buffers (ImageData).
- * Supports Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) keyboard shortcuts and limits memory footprint.
+ * Hook to manage Multi-Layer Canvas Undo / Redo history state stack.
+ * Tracks layer structure (addition, deletion, reordering, opacity, blend modes),
+ * canvas dimensions, and snapshot pixel buffers (ImageData) for each layer.
  */
-export function useCanvasHistory(baseCanvasRef) {
+export function useCanvasHistory({
+  layers,
+  activeLayerId,
+  canvasWidth,
+  canvasHeight,
+  layerCanvasesRef,
+  onRestoreSnapshot
+}) {
   const historyStackRef = useRef([]);
   const currentIndexRef = useRef(-1);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const maxHistory = 35;
+  const maxHistory = 25;
 
   const updateState = useCallback(() => {
     setCanUndo(currentIndexRef.current > 0);
     setCanRedo(currentIndexRef.current < historyStackRef.current.length - 1);
   }, []);
 
-  const pushSnapshot = useCallback(() => {
-    const canvas = baseCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  /**
+   * Captures a complete snapshot of all layers and their pixel buffers
+   */
+  const pushSnapshot = useCallback((overrideData = {}) => {
+    const currentLayers = overrideData.layers || layers;
+    const currentActiveId = overrideData.activeLayerId || activeLayerId;
+    const w = overrideData.canvasWidth || canvasWidth;
+    const h = overrideData.canvasHeight || canvasHeight;
 
-    try {
-      const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      // Discard redo stack beyond current index
-      const newStack = historyStackRef.current.slice(0, currentIndexRef.current + 1);
-      newStack.push(snapshot);
+    const layerPixelData = {};
 
-      // Limit memory
-      if (newStack.length > maxHistory) {
-        newStack.shift();
+    currentLayers.forEach((layer) => {
+      const canvas = layerCanvasesRef.current[layer.id];
+      if (canvas) {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          try {
+            layerPixelData[layer.id] = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          } catch (e) {
+            console.error(`Error reading pixel data for ${layer.name}:`, e);
+          }
+        }
       }
+    });
 
-      historyStackRef.current = newStack;
-      currentIndexRef.current = newStack.length - 1;
-      updateState();
-    } catch (err) {
-      console.error('Failed to capture canvas snapshot:', err);
+    const snapshot = {
+      layers: currentLayers.map((l) => ({ ...l })),
+      activeLayerId: currentActiveId,
+      canvasWidth: w,
+      canvasHeight: h,
+      layerPixelData
+    };
+
+    // Discard redo history beyond current index
+    const newStack = historyStackRef.current.slice(0, currentIndexRef.current + 1);
+    newStack.push(snapshot);
+
+    if (newStack.length > maxHistory) {
+      newStack.shift();
     }
-  }, [baseCanvasRef, updateState]);
+
+    historyStackRef.current = newStack;
+    currentIndexRef.current = newStack.length - 1;
+    updateState();
+  }, [layers, activeLayerId, canvasWidth, canvasHeight, layerCanvasesRef, updateState]);
+
+  /**
+   * Initializes the history stack with the initial blank canvas / layers state
+   */
+  const initHistory = useCallback((initialLayers, initialActiveId, w, h) => {
+    const targetLayers = initialLayers || layers;
+    const targetActiveId = initialActiveId || activeLayerId;
+    const targetW = w || canvasWidth;
+    const targetH = h || canvasHeight;
+
+    const layerPixelData = {};
+    targetLayers.forEach((layer) => {
+      const canvas = layerCanvasesRef.current[layer.id];
+      if (canvas) {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          layerPixelData[layer.id] = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        }
+      }
+    });
+
+    const snapshot = {
+      layers: targetLayers.map((l) => ({ ...l })),
+      activeLayerId: targetActiveId,
+      canvasWidth: targetW,
+      canvasHeight: targetH,
+      layerPixelData
+    };
+
+    historyStackRef.current = [snapshot];
+    currentIndexRef.current = 0;
+    updateState();
+  }, [layers, activeLayerId, canvasWidth, canvasHeight, layerCanvasesRef, updateState]);
+
+  /**
+   * Applies a snapshot back onto the canvas elements
+   */
+  const applySnapshotToCanvases = useCallback((snapshot) => {
+    if (!snapshot) return;
+
+    if (onRestoreSnapshot) {
+      onRestoreSnapshot(snapshot);
+    }
+
+    // Restore pixel data for all layers
+    setTimeout(() => {
+      Object.entries(snapshot.layerPixelData).forEach(([layerId, imageData]) => {
+        const canvas = layerCanvasesRef.current[layerId];
+        if (canvas && imageData) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.putImageData(imageData, 0, 0);
+          }
+        }
+      });
+    }, 20);
+  }, [layerCanvasesRef, onRestoreSnapshot]);
 
   const undo = useCallback(() => {
-    const canvas = baseCanvasRef.current;
-    if (!canvas || currentIndexRef.current <= 0) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
+    if (currentIndexRef.current <= 0) return;
     currentIndexRef.current -= 1;
     const snapshot = historyStackRef.current[currentIndexRef.current];
-    if (snapshot) {
-      ctx.putImageData(snapshot, 0, 0);
-    }
+    applySnapshotToCanvases(snapshot);
     updateState();
-  }, [baseCanvasRef, updateState]);
+  }, [applySnapshotToCanvases, updateState]);
 
   const redo = useCallback(() => {
-    const canvas = baseCanvasRef.current;
-    if (!canvas || currentIndexRef.current >= historyStackRef.current.length - 1) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
+    if (currentIndexRef.current >= historyStackRef.current.length - 1) return;
     currentIndexRef.current += 1;
     const snapshot = historyStackRef.current[currentIndexRef.current];
-    if (snapshot) {
-      ctx.putImageData(snapshot, 0, 0);
-    }
+    applySnapshotToCanvases(snapshot);
     updateState();
-  }, [baseCanvasRef, updateState]);
-
-  const initHistory = useCallback(() => {
-    const canvas = baseCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    try {
-      const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      historyStackRef.current = [snapshot];
-      currentIndexRef.current = 0;
-      updateState();
-    } catch (err) {
-      console.error('Failed to init canvas history:', err);
-    }
-  }, [baseCanvasRef, updateState]);
-
-  const clearHistory = useCallback(() => {
-    historyStackRef.current = [];
-    currentIndexRef.current = -1;
-    updateState();
-  }, [updateState]);
+  }, [applySnapshotToCanvases, updateState]);
 
   // Global Keyboard shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Don't intercept if user is typing in an active input or textarea
       const tag = e.target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) {
         return;
@@ -123,10 +174,9 @@ export function useCanvasHistory(baseCanvasRef) {
     canUndo,
     canRedo,
     pushSnapshot,
+    initHistory,
     undo,
     redo,
-    initHistory,
-    clearHistory,
     historyCount: historyStackRef.current.length,
     currentIndex: currentIndexRef.current
   };

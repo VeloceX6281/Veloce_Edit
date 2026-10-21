@@ -9,7 +9,9 @@ export default function CanvasViewport({
   shapeFillColor,
   zoom,
   filterString = 'none',
-  baseCanvasRef,
+  layers,
+  activeLayerId,
+  layerCanvasesRef,
   pushSnapshot,
   initHistory,
   canvasWidth = 800,
@@ -28,30 +30,41 @@ export default function CanvasViewport({
   const shapeStartRef = useRef({ x: 0, y: 0 });
   const lastMousePosRef = useRef({ x: 0, y: 0 });
 
-  // Mouse live position on canvas (for status bar)
+  // Cursor position indicator
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0, inside: false });
 
   // Text overlay state
   const [textConfig, setTextConfig] = useState(null);
 
-  // Initialize Canvas
+  // Initialize Canvas & Background layer on mount or resize
   useEffect(() => {
-    const canvas = baseCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
+    // Check if background canvas is mounted
+    const bgCanvas = layerCanvasesRef.current['layer_background'] || layerCanvasesRef.current[layers[0]?.id];
+    if (bgCanvas) {
+      const ctx = bgCanvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        // Paint solid white on background layer if empty
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+      }
+    }
 
-    // Fill with solid white paper background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Initialize history state
+    initHistory(layers, activeLayerId, canvasWidth, canvasHeight);
+  }, []);
 
-    // Initial snapshot in history
-    initHistory();
-  }, [baseCanvasRef, initHistory, canvasWidth, canvasHeight]);
+  // Helper to retrieve the active layer's canvas element
+  const getActiveCanvas = useCallback(() => {
+    const canvas = layerCanvasesRef.current[activeLayerId];
+    if (canvas) return canvas;
+    // Fallback to top-most layer
+    const fallbackId = layers[layers.length - 1]?.id;
+    return layerCanvasesRef.current[fallbackId] || null;
+  }, [activeLayerId, layers, layerCanvasesRef]);
 
   // Convert client mouse coordinates to canvas coordinate space
   const getCanvasCoords = useCallback((e) => {
-    const canvas = baseCanvasRef.current;
+    const canvas = getActiveCanvas();
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -60,7 +73,7 @@ export default function CanvasViewport({
       x: Math.round((e.clientX - rect.left) * scaleX),
       y: Math.round((e.clientY - rect.top) * scaleY)
     };
-  }, [baseCanvasRef]);
+  }, [getActiveCanvas]);
 
   // Render shape on a given canvas context
   const renderShape = useCallback((ctx, startX, startY, currX, currY, isShift) => {
@@ -109,7 +122,7 @@ export default function CanvasViewport({
     ctx.restore();
   }, [activeTool, brushColor, brushSize, shapeFillEnabled, shapeFillColor]);
 
-  // Handle Shift key press/release during shape drag to update preview instantly
+  // Handle Shift key press/release during shape drag
   useEffect(() => {
     const handleShiftChange = (e) => {
       if (!isDrawingShapeRef.current || !previewCanvasRef.current) return;
@@ -138,12 +151,12 @@ export default function CanvasViewport({
 
   // Pointer Down handler
   const handlePointerDown = (e) => {
-    if (e.button !== 0) return; // Only primary mouse button
+    if (e.button !== 0) return; // Primary mouse button only
 
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
 
-    // 1. Text Tool: Click to place text
+    // 1. Text Tool
     if (activeTool === 'text') {
       setTextConfig({
         visible: true,
@@ -155,12 +168,11 @@ export default function CanvasViewport({
       return;
     }
 
-    // Dismiss open text box if clicking elsewhere with other tools
     if (textConfig?.visible) {
       setTextConfig(null);
     }
 
-    // 2. Shape Tools: Start Shape Drag
+    // 2. Shape Tools
     if (activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') {
       isDrawingShapeRef.current = true;
       shapeStartRef.current = coords;
@@ -171,38 +183,49 @@ export default function CanvasViewport({
       return;
     }
 
-    // 3. Paint Bucket: Canvas Fill
+    // 3. Paint Bucket: Fill Active Layer
     if (activeTool === 'bucket') {
-      const baseCanvas = baseCanvasRef.current;
-      if (!baseCanvas) return;
-      const ctx = baseCanvas.getContext('2d');
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+      const ctx = activeCanvas.getContext('2d');
       ctx.fillStyle = brushColor;
-      ctx.fillRect(0, 0, baseCanvas.width, baseCanvas.height);
+      ctx.fillRect(0, 0, activeCanvas.width, activeCanvas.height);
       pushSnapshot();
       return;
     }
 
-    // 4. Freehand Brush & Eraser
+    // 4. Freehand Brush & Eraser (draws onto active layer)
     if (activeTool === 'brush' || activeTool === 'eraser') {
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+
       isDrawingRef.current = true;
       pointsRef.current = [coords];
       lastMidPointRef.current = coords;
 
-      const baseCanvas = baseCanvasRef.current;
-      if (!baseCanvas) return;
-      const ctx = baseCanvas.getContext('2d');
-
+      const ctx = activeCanvas.getContext('2d');
       ctx.save();
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.lineWidth = brushSize;
 
+      const currentLayerObj = layers.find((l) => l.id === activeLayerId);
+      const isBackground = currentLayerObj?.isBackground;
+
       if (activeTool === 'eraser') {
-        ctx.strokeStyle = '#ffffff';
-        ctx.fillStyle = '#ffffff';
+        if (isBackground) {
+          // Erase back to white paper on background layer
+          ctx.strokeStyle = '#ffffff';
+          ctx.fillStyle = '#ffffff';
+          ctx.globalCompositeOperation = 'source-over';
+        } else {
+          // Clean transparent erase on transparent layers
+          ctx.globalCompositeOperation = 'destination-out';
+        }
       } else {
         ctx.strokeStyle = brushColor;
         ctx.fillStyle = brushColor;
+        ctx.globalCompositeOperation = 'source-over';
       }
 
       if (e.currentTarget.setPointerCapture) {
@@ -217,7 +240,7 @@ export default function CanvasViewport({
     lastMousePosRef.current = coords;
     setCursorPos({ x: coords.x, y: coords.y, inside: true });
 
-    // Shape Tool live preview
+    // Live Shape Preview
     if (isDrawingShapeRef.current && previewCanvasRef.current) {
       const pCanvas = previewCanvasRef.current;
       const pCtx = pCanvas.getContext('2d');
@@ -234,8 +257,11 @@ export default function CanvasViewport({
       return;
     }
 
-    // Freehand Brush / Eraser drawing with quadratic curve smoothing
+    // Freehand Brush / Eraser with quadratic bezier curve smoothing
     if (isDrawingRef.current && (activeTool === 'brush' || activeTool === 'eraser')) {
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+
       const points = pointsRef.current;
       const lastPoint = points[points.length - 1];
 
@@ -244,10 +270,7 @@ export default function CanvasViewport({
 
       points.push(coords);
 
-      const baseCanvas = baseCanvasRef.current;
-      if (!baseCanvas) return;
-      const ctx = baseCanvas.getContext('2d');
-
+      const ctx = activeCanvas.getContext('2d');
       const p1 = points[points.length - 2];
       const p2 = points[points.length - 1];
       const midPoint = {
@@ -275,9 +298,9 @@ export default function CanvasViewport({
         pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
       }
 
-      const baseCanvas = baseCanvasRef.current;
-      if (baseCanvas) {
-        const ctx = baseCanvas.getContext('2d');
+      const activeCanvas = getActiveCanvas();
+      if (activeCanvas) {
+        const ctx = activeCanvas.getContext('2d');
         renderShape(
           ctx,
           shapeStartRef.current.x,
@@ -293,11 +316,11 @@ export default function CanvasViewport({
       return;
     }
 
-    // Commit Freehand Brush / Eraser Stroke
+    // Commit Brush / Eraser stroke
     if (isDrawingRef.current) {
-      const baseCanvas = baseCanvasRef.current;
-      if (baseCanvas) {
-        const ctx = baseCanvas.getContext('2d');
+      const activeCanvas = getActiveCanvas();
+      if (activeCanvas) {
+        const ctx = activeCanvas.getContext('2d');
         const points = pointsRef.current;
 
         if (points.length === 1) {
@@ -321,11 +344,11 @@ export default function CanvasViewport({
     }
   };
 
-  // Commit text from overlay onto canvas
+  // Commit text from overlay onto active layer
   const handleCommitText = (textData) => {
-    const baseCanvas = baseCanvasRef.current;
-    if (!baseCanvas) return;
-    const ctx = baseCanvas.getContext('2d');
+    const activeCanvas = getActiveCanvas();
+    if (!activeCanvas) return;
+    const ctx = activeCanvas.getContext('2d');
 
     ctx.save();
     const stylePrefix = textData.isItalic ? 'italic ' : '';
@@ -346,7 +369,6 @@ export default function CanvasViewport({
     setTextConfig(null);
   };
 
-  // Determine cursor based on active tool
   const getCursorStyle = () => {
     switch (activeTool) {
       case 'text':
@@ -364,33 +386,55 @@ export default function CanvasViewport({
     }
   };
 
+  const activeLayerName = layers.find((l) => l.id === activeLayerId)?.name || 'Layer';
+
   return (
     <main
       ref={containerRef}
       className="flex-1 bg-[#090a0f] relative overflow-hidden flex items-center justify-center p-8 select-none"
     >
-      {/* Canvas Container with shadow, zoom, and live non-destructive filter preview */}
+      {/* Canvas Viewport Container */}
       <div
-        className="relative shadow-2xl shadow-black/90 rounded border border-zinc-800 bg-white overflow-hidden transition-transform duration-75 origin-center"
+        className="relative shadow-2xl shadow-black/90 rounded border border-zinc-800 bg-[#1e2029] overflow-hidden transition-transform duration-75 origin-center"
         style={{
           width: `${canvasWidth}px`,
           height: `${canvasHeight}px`,
           transform: `scale(${zoom / 100})`
         }}
       >
-        {/* Base Canvas (Committed artwork with non-destructive GPU filter preview) */}
-        <canvas
-          ref={baseCanvasRef}
-          width={canvasWidth}
-          height={canvasHeight}
+        {/* Subtle checkered background to denote transparency */}
+        <div
+          className="absolute inset-0 bg-white"
           style={{
-            filter: filterString !== 'none' ? filterString : undefined,
-            transition: 'filter 0.05s ease-out'
+            backgroundImage: `linear-gradient(45deg, #f4f4f5 25%, transparent 25%), 
+                              linear-gradient(-45deg, #f4f4f5 25%, transparent 25%), 
+                              linear-gradient(45deg, transparent 75%, #f4f4f5 75%), 
+                              linear-gradient(-45deg, transparent 75%, #f4f4f5 75%)`,
+            backgroundSize: '16px 16px',
+            backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px'
           }}
-          className="absolute inset-0 block bg-white"
         />
 
-        {/* Live Preview Canvas for shapes and interactive feedback */}
+        {/* Multi-Layer Stack: Render each layer canvas in bottom-to-top visual order */}
+        {layers.map((layer) => (
+          <canvas
+            key={layer.id}
+            ref={(el) => {
+              if (el) layerCanvasesRef.current[layer.id] = el;
+            }}
+            width={canvasWidth}
+            height={canvasHeight}
+            style={{
+              display: layer.visible ? 'block' : 'none',
+              opacity: layer.opacity / 100,
+              mixBlendMode: layer.blendMode,
+              filter: filterString !== 'none' ? filterString : undefined
+            }}
+            className="absolute inset-0 block pointer-events-none"
+          />
+        ))}
+
+        {/* Live Preview Canvas for shape dragging and real-time interaction */}
         <canvas
           ref={previewCanvasRef}
           width={canvasWidth}
@@ -398,12 +442,12 @@ export default function CanvasViewport({
           style={{
             filter: filterString !== 'none' ? filterString : undefined
           }}
-          className="absolute inset-0 block pointer-events-none z-10"
+          className="absolute inset-0 block pointer-events-none z-30"
         />
 
-        {/* Pointer Interaction Layer */}
+        {/* Pointer Interaction Layer (Captures mouse/touch gestures cleanly) */}
         <div
-          className={`absolute inset-0 z-20 ${getCursorStyle()}`}
+          className={`absolute inset-0 z-40 ${getCursorStyle()}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -425,11 +469,15 @@ export default function CanvasViewport({
       </div>
 
       {/* Floating Canvas Status Badge */}
-      <div className="absolute bottom-3 left-4 bg-zinc-900/90 backdrop-blur-md border border-zinc-800 rounded-md px-3 py-1 flex items-center gap-3 text-xs text-zinc-400 shadow-lg">
+      <div className="absolute bottom-3 left-4 bg-zinc-900/90 backdrop-blur-md border border-zinc-800 rounded-md px-3 py-1 flex items-center gap-3 text-xs text-zinc-400 shadow-lg z-20">
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Tool: <strong className="text-zinc-200 capitalize">{activeTool}</strong></span>
+          <span>
+            Active: <strong className="text-zinc-200">{activeLayerName}</strong>
+          </span>
         </div>
+        <span>|</span>
+        <span>Tool: <strong className="text-zinc-200 capitalize">{activeTool}</strong></span>
         <span>|</span>
         <span>{canvasWidth} × {canvasHeight} px</span>
         <span>|</span>
@@ -447,7 +495,7 @@ export default function CanvasViewport({
             <span>|</span>
             <span className="text-[10px] text-indigo-400 font-medium flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
-              Live Filter Preview
+              Filter Preview
             </span>
           </>
         )}
@@ -455,7 +503,7 @@ export default function CanvasViewport({
           <>
             <span>|</span>
             <span className="text-[10px] text-indigo-400 font-medium">
-              Hold Shift for 1:1 ratio
+              Shift = 1:1
             </span>
           </>
         )}

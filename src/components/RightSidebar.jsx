@@ -1,5 +1,6 @@
 import React from 'react';
 import AdjustmentsPanel from './AdjustmentsPanel';
+import LayersPanel from './LayersPanel';
 
 const PALETTE = [
   '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
@@ -26,6 +27,20 @@ export default function RightSidebar({
   onResetAdjustments,
   onClearCanvas,
   onFillCanvas,
+  // Layer Stack Props
+  layers,
+  activeLayerId,
+  onSelectLayer,
+  onAddLayer,
+  onDeleteLayer,
+  onDuplicateLayer,
+  onMoveLayerUp,
+  onMoveLayerDown,
+  onToggleVisibility,
+  onChangeOpacity,
+  onChangeBlendMode,
+  onChangeLayerName,
+  // History Props
   canUndo,
   canRedo,
   onUndo,
@@ -33,8 +48,20 @@ export default function RightSidebar({
 }) {
   return (
     <aside className="w-72 bg-[#14161d] border-l border-zinc-800 flex flex-col z-10 select-none">
-      {/* Top Tab Bar: Adjustments, Properties, Layers */}
+      {/* Top Tab Bar: Layers, Adjustments, Properties */}
       <div className="h-10 border-b border-zinc-800 flex text-xs">
+        <button
+          onClick={() => setActiveTab('layers')}
+          className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
+            activeTab === 'layers'
+              ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <span>Layers</span>
+          <span className="text-[10px] text-zinc-500 font-mono">({layers.length})</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('adjustments')}
           className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
@@ -56,21 +83,32 @@ export default function RightSidebar({
         >
           <span>Properties</span>
         </button>
-
-        <button
-          onClick={() => setActiveTab('layers')}
-          className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
-            activeTab === 'layers'
-              ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <span>Layers</span>
-        </button>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto space-y-5">
-        {/* TAB 1: Adjustments & Filter Pipeline */}
+        {/* TAB 1: Layers Stack */}
+        {activeTab === 'layers' && (
+          <LayersPanel
+            layers={layers}
+            activeLayerId={activeLayerId}
+            onSelectLayer={onSelectLayer}
+            onAddLayer={onAddLayer}
+            onDeleteLayer={onDeleteLayer}
+            onDuplicateLayer={onDuplicateLayer}
+            onMoveLayerUp={onMoveLayerUp}
+            onMoveLayerDown={onMoveLayerDown}
+            onToggleVisibility={onToggleVisibility}
+            onChangeOpacity={onChangeOpacity}
+            onChangeBlendMode={onChangeBlendMode}
+            onChangeLayerName={onChangeLayerName}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={onUndo}
+            onRedo={onRedo}
+          />
+        )}
+
+        {/* TAB 2: Adjustments & Filter Pipeline */}
         {activeTab === 'adjustments' && (
           <AdjustmentsPanel
             adjustments={adjustments}
@@ -80,7 +118,7 @@ export default function RightSidebar({
           />
         )}
 
-        {/* TAB 2: Tool Properties */}
+        {/* TAB 3: Tool Properties */}
         {activeTab === 'properties' && (
           <div className="flex flex-col gap-5 text-xs">
             {/* Tool Specific Sliders */}
@@ -187,69 +225,14 @@ export default function RightSidebar({
                 onClick={onClearCanvas}
                 className="w-full py-2 px-3 rounded bg-zinc-800 hover:bg-rose-950/60 hover:text-rose-300 hover:border-rose-800/80 text-zinc-300 transition text-xs font-medium border border-zinc-700 flex items-center justify-center gap-1.5"
               >
-                Clear Entire Canvas
+                Clear Active Layer
               </button>
               <button
                 onClick={() => onFillCanvas(brushColor)}
                 className="w-full py-2 px-3 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition text-xs font-medium border border-zinc-700 flex items-center justify-center gap-1.5"
               >
-                Fill Canvas with Foreground Color
+                Fill Active Layer with Foreground
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: Layers */}
-        {activeTab === 'layers' && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span className="font-semibold uppercase tracking-wider text-[11px]">Layer Stack</span>
-              <span className="text-[11px] text-zinc-500">1 Layer</span>
-            </div>
-
-            {/* Active Drawing Canvas Layer */}
-            <div className="p-3 rounded-lg bg-zinc-800/80 border border-indigo-500/50 flex items-center justify-between text-xs shadow-sm">
-              <div className="flex items-center gap-2.5">
-                <div className="w-6 h-6 rounded bg-white border border-zinc-600 flex items-center justify-center text-xs shadow-inner">
-                  🎨
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-100 font-medium">Drawing Canvas</span>
-                  <span className="text-[10px] text-zinc-400">Active • 800 × 500 px</span>
-                </div>
-              </div>
-              <span className="text-indigo-400 text-xs" title="Visible">👁</span>
-            </div>
-
-            {/* History Status Card */}
-            <div className="mt-4 p-3 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs space-y-2">
-              <span className="font-semibold uppercase tracking-wider text-[10px] text-zinc-400">
-                History State
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onUndo}
-                  disabled={!canUndo}
-                  className={`flex-1 py-1 px-2 rounded border text-[11px] transition ${
-                    canUndo
-                      ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
-                      : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  Undo (Ctrl+Z)
-                </button>
-                <button
-                  onClick={onRedo}
-                  disabled={!canRedo}
-                  className={`flex-1 py-1 px-2 rounded border text-[11px] transition ${
-                    canRedo
-                      ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
-                      : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  Redo (Ctrl+Y)
-                </button>
-              </div>
             </div>
           </div>
         )}

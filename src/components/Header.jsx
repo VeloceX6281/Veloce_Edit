@@ -8,64 +8,37 @@ export default function Header({
   onUndo,
   onRedo,
   onClearCanvas,
-  baseCanvasRef,
-  pushSnapshot,
-  filterString = 'none'
+  onOpenImportModal,
+  onOpenExportModal,
+  onAddLayer,
+  onDeleteLayer,
+  layersCount
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
 
-  // Import Image from user disk
+  // File chosen via input
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
+      const dataUrl = event.target.result;
       const img = new Image();
       img.onload = () => {
-        const canvas = baseCanvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-
-        // Draw image scaled to fit or center inside canvas
-        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        const x = (canvas.width - w) / 2;
-        const y = (canvas.height - h) / 2;
-
-        ctx.drawImage(img, x, y, w, h);
-        pushSnapshot();
+        onOpenImportModal({
+          name: file.name,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          dataUrl,
+          imgElement: img
+        });
       };
-      img.src = event.target.result;
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
     e.target.value = '';
-  };
-
-  // Export Canvas as PNG (baking any active filter if present)
-  const handleExport = () => {
-    const canvas = baseCanvasRef.current;
-    if (!canvas) return;
-
-    const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = canvas.width;
-    exportCanvas.height = canvas.height;
-    const expCtx = exportCanvas.getContext('2d');
-    expCtx.fillStyle = '#ffffff';
-    expCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-    if (filterString && filterString !== 'none') {
-      expCtx.filter = filterString;
-    }
-    expCtx.drawImage(canvas, 0, 0);
-
-    const dataUrl = exportCanvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.download = `veloce-edit-${Date.now()}.png`;
-    link.href = dataUrl;
-    link.click();
   };
 
   return (
@@ -79,7 +52,7 @@ export default function Header({
         className="hidden"
       />
 
-      {/* Brand & Menu */}
+      {/* Brand & Studio Menus */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xs text-white shadow-lg shadow-indigo-500/20">
@@ -90,6 +63,7 @@ export default function Header({
 
         {/* Studio Menus */}
         <nav className="relative flex items-center gap-1 text-xs text-zinc-400">
+          {/* File Menu */}
           <div className="relative">
             <button
               onClick={() => setActiveMenu(activeMenu === 'file' ? null : 'file')}
@@ -101,7 +75,7 @@ export default function Header({
             </button>
             {activeMenu === 'file' && (
               <div
-                className="absolute left-0 top-8 w-44 bg-[#1f222b] border border-zinc-700/80 rounded-md py-1 shadow-2xl z-50 text-xs flex flex-col"
+                className="absolute left-0 top-8 w-48 bg-[#1f222b] border border-zinc-700/80 rounded-md py-1 shadow-2xl z-50 text-xs flex flex-col"
                 onMouseLeave={() => setActiveMenu(null)}
               >
                 <button
@@ -116,13 +90,13 @@ export default function Header({
                 </button>
                 <button
                   onClick={() => {
-                    handleExport();
+                    onOpenExportModal();
                     setActiveMenu(null);
                   }}
                   className="px-3 py-1.5 text-left text-zinc-200 hover:bg-indigo-600 hover:text-white flex items-center justify-between"
                 >
-                  <span>Export PNG</span>
-                  <span className="text-[10px] text-zinc-400">Ctrl+S</span>
+                  <span>Export Artwork...</span>
+                  <span className="text-[10px] text-zinc-400">Ctrl+E</span>
                 </button>
                 <div className="h-[1px] bg-zinc-700/60 my-1" />
                 <button
@@ -132,12 +106,13 @@ export default function Header({
                   }}
                   className="px-3 py-1.5 text-left text-rose-400 hover:bg-rose-600 hover:text-white flex items-center justify-between"
                 >
-                  <span>Clear Canvas</span>
+                  <span>Clear Active Layer</span>
                 </button>
               </div>
             )}
           </div>
 
+          {/* Edit Menu */}
           <div className="relative">
             <button
               onClick={() => setActiveMenu(activeMenu === 'edit' ? null : 'edit')}
@@ -149,7 +124,7 @@ export default function Header({
             </button>
             {activeMenu === 'edit' && (
               <div
-                className="absolute left-0 top-8 w-40 bg-[#1f222b] border border-zinc-700/80 rounded-md py-1 shadow-2xl z-50 text-xs flex flex-col"
+                className="absolute left-0 top-8 w-44 bg-[#1f222b] border border-zinc-700/80 rounded-md py-1 shadow-2xl z-50 text-xs flex flex-col"
                 onMouseLeave={() => setActiveMenu(null)}
               >
                 <button
@@ -181,12 +156,26 @@ export default function Header({
                 <div className="h-[1px] bg-zinc-700/60 my-1" />
                 <button
                   onClick={() => {
-                    onClearCanvas();
+                    onAddLayer();
                     setActiveMenu(null);
                   }}
                   className="px-3 py-1.5 text-left text-zinc-200 hover:bg-indigo-600 hover:text-white"
                 >
-                  Clear All
+                  Add New Layer
+                </button>
+                <button
+                  disabled={layersCount <= 1}
+                  onClick={() => {
+                    onDeleteLayer();
+                    setActiveMenu(null);
+                  }}
+                  className={`px-3 py-1.5 text-left ${
+                    layersCount > 1
+                      ? 'text-zinc-200 hover:bg-rose-600 hover:text-white'
+                      : 'text-zinc-600 cursor-not-allowed'
+                  }`}
+                >
+                  Delete Active Layer
                 </button>
               </div>
             )}
@@ -227,7 +216,7 @@ export default function Header({
         </div>
       </div>
 
-      {/* Right Controls: Zoom & Import / Export */}
+      {/* Right Controls: Zoom, Import Image, Export */}
       <div className="flex items-center gap-3">
         {/* Zoom Controls */}
         <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-xs text-zinc-400">
@@ -254,23 +243,23 @@ export default function Header({
           </button>
         </div>
 
-        {/* Import Image */}
+        {/* Import Image Button */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition border border-zinc-700 flex items-center gap-1.5 shadow-sm"
-          title="Import an image file onto canvas"
+          className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition border border-zinc-700 flex items-center gap-1.5 shadow-sm cursor-pointer"
+          title="Import an image file from disk"
         >
           <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
-          Import
+          Import Image
         </button>
 
-        {/* Export Image */}
+        {/* High-Res Multi-Format Export Button */}
         <button
-          onClick={handleExport}
-          className="px-3.5 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded transition shadow-sm shadow-indigo-600/30 flex items-center gap-1.5"
-          title="Download canvas as PNG"
+          onClick={onOpenExportModal}
+          className="px-3.5 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded transition shadow-sm shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
+          title="Export multi-layer artwork to PNG/JPEG"
         >
           <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
