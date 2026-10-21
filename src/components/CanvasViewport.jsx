@@ -8,6 +8,7 @@ export default function CanvasViewport({
   shapeFillEnabled,
   shapeFillColor,
   zoom,
+  filterString = 'none',
   baseCanvasRef,
   pushSnapshot,
   initHistory,
@@ -164,7 +165,6 @@ export default function CanvasViewport({
       isDrawingShapeRef.current = true;
       shapeStartRef.current = coords;
 
-      // Set pointer capture for smooth dragging outside canvas bounds
       if (e.currentTarget.setPointerCapture) {
         e.currentTarget.setPointerCapture(e.pointerId);
       }
@@ -198,7 +198,6 @@ export default function CanvasViewport({
       ctx.lineWidth = brushSize;
 
       if (activeTool === 'eraser') {
-        // Clear strokes cleanly back to white paper
         ctx.strokeStyle = '#ffffff';
         ctx.fillStyle = '#ffffff';
       } else {
@@ -240,7 +239,6 @@ export default function CanvasViewport({
       const points = pointsRef.current;
       const lastPoint = points[points.length - 1];
 
-      // Skip redundant micro-movements
       const dist = Math.hypot(coords.x - lastPoint.x, coords.y - lastPoint.y);
       if (dist < 1.5) return;
 
@@ -250,7 +248,6 @@ export default function CanvasViewport({
       if (!baseCanvas) return;
       const ctx = baseCanvas.getContext('2d');
 
-      // Midpoint quadratic curve smoothing
       const p1 = points[points.length - 2];
       const p2 = points[points.length - 1];
       const midPoint = {
@@ -304,12 +301,10 @@ export default function CanvasViewport({
         const points = pointsRef.current;
 
         if (points.length === 1) {
-          // Single tap dot
           ctx.beginPath();
           ctx.arc(points[0].x, points[0].y, Math.max(1, brushSize / 2), 0, Math.PI * 2);
           ctx.fill();
         } else if (points.length >= 2) {
-          // Final segment to last point
           const lastPoint = points[points.length - 1];
           ctx.beginPath();
           ctx.moveTo(lastMidPointRef.current.x, lastMidPointRef.current.y);
@@ -374,7 +369,7 @@ export default function CanvasViewport({
       ref={containerRef}
       className="flex-1 bg-[#090a0f] relative overflow-hidden flex items-center justify-center p-8 select-none"
     >
-      {/* Canvas Container with shadow and zoom transform */}
+      {/* Canvas Container with shadow, zoom, and live non-destructive filter preview */}
       <div
         className="relative shadow-2xl shadow-black/90 rounded border border-zinc-800 bg-white overflow-hidden transition-transform duration-75 origin-center"
         style={{
@@ -383,11 +378,15 @@ export default function CanvasViewport({
           transform: `scale(${zoom / 100})`
         }}
       >
-        {/* Base Canvas (Committed artwork) */}
+        {/* Base Canvas (Committed artwork with non-destructive GPU filter preview) */}
         <canvas
           ref={baseCanvasRef}
           width={canvasWidth}
           height={canvasHeight}
+          style={{
+            filter: filterString !== 'none' ? filterString : undefined,
+            transition: 'filter 0.05s ease-out'
+          }}
           className="absolute inset-0 block bg-white"
         />
 
@@ -396,6 +395,9 @@ export default function CanvasViewport({
           ref={previewCanvasRef}
           width={canvasWidth}
           height={canvasHeight}
+          style={{
+            filter: filterString !== 'none' ? filterString : undefined
+          }}
           className="absolute inset-0 block pointer-events-none z-10"
         />
 
@@ -437,6 +439,15 @@ export default function CanvasViewport({
             <span>|</span>
             <span className="font-mono text-[11px] text-zinc-300">
               X: {cursorPos.x}, Y: {cursorPos.y}
+            </span>
+          </>
+        )}
+        {filterString !== 'none' && (
+          <>
+            <span>|</span>
+            <span className="text-[10px] text-indigo-400 font-medium flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
+              Live Filter Preview
             </span>
           </>
         )}

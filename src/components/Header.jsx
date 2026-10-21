@@ -9,7 +9,8 @@ export default function Header({
   onRedo,
   onClearCanvas,
   baseCanvasRef,
-  pushSnapshot
+  pushSnapshot,
+  filterString = 'none'
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -40,22 +41,24 @@ export default function Header({
       img.src = event.target.result;
     };
     reader.readAsDataURL(file);
-    // Reset file input
     e.target.value = '';
   };
 
-  // Export Canvas as PNG
+  // Export Canvas as PNG (baking any active filter if present)
   const handleExport = () => {
     const canvas = baseCanvasRef.current;
     if (!canvas) return;
 
-    // Create a temporary canvas with white background so JPEG/PNG exports cleanly
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = canvas.width;
     exportCanvas.height = canvas.height;
     const expCtx = exportCanvas.getContext('2d');
     expCtx.fillStyle = '#ffffff';
     expCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (filterString && filterString !== 'none') {
+      expCtx.filter = filterString;
+    }
     expCtx.drawImage(canvas, 0, 0);
 
     const dataUrl = exportCanvas.toDataURL('image/png');

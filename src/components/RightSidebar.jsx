@@ -1,4 +1,5 @@
 import React from 'react';
+import AdjustmentsPanel from './AdjustmentsPanel';
 
 const PALETTE = [
   '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
@@ -19,6 +20,10 @@ export default function RightSidebar({
   setShapeFillEnabled,
   shapeFillColor,
   setShapeFillColor,
+  adjustments,
+  setAdjustments,
+  onApplyAdjustments,
+  onResetAdjustments,
   onClearCanvas,
   onFillCanvas,
   canUndo,
@@ -28,84 +33,55 @@ export default function RightSidebar({
 }) {
   return (
     <aside className="w-72 bg-[#14161d] border-l border-zinc-800 flex flex-col z-10 select-none">
-      {/* Top Tab Bar */}
-      <div className="h-10 border-b border-zinc-800 flex">
-        <button
-          onClick={() => setActiveTab('layers')}
-          className={`flex-1 text-xs font-medium border-b-2 transition ${
-            activeTab === 'layers'
-              ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Layers
-        </button>
+      {/* Top Tab Bar: Adjustments, Properties, Layers */}
+      <div className="h-10 border-b border-zinc-800 flex text-xs">
         <button
           onClick={() => setActiveTab('adjustments')}
-          className={`flex-1 text-xs font-medium border-b-2 transition ${
+          className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
             activeTab === 'adjustments'
               ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
               : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          Properties
+          <span>Adjustments</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('properties')}
+          className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
+            activeTab === 'properties'
+              ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <span>Properties</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('layers')}
+          className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
+            activeTab === 'layers'
+              ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <span>Layers</span>
         </button>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto space-y-5">
-        {activeTab === 'layers' ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span className="font-semibold uppercase tracking-wider text-[11px]">Layer Stack</span>
-              <span className="text-[11px] text-zinc-500">1 Layer</span>
-            </div>
+        {/* TAB 1: Adjustments & Filter Pipeline */}
+        {activeTab === 'adjustments' && (
+          <AdjustmentsPanel
+            adjustments={adjustments}
+            setAdjustments={setAdjustments}
+            onApplyAdjustments={onApplyAdjustments}
+            onResetAdjustments={onResetAdjustments}
+          />
+        )}
 
-            {/* Active Drawing Canvas Layer */}
-            <div className="p-3 rounded-lg bg-zinc-800/80 border border-indigo-500/50 flex items-center justify-between text-xs shadow-sm">
-              <div className="flex items-center gap-2.5">
-                <div className="w-6 h-6 rounded bg-white border border-zinc-600 flex items-center justify-center text-xs shadow-inner">
-                  🎨
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-100 font-medium">Drawing Canvas</span>
-                  <span className="text-[10px] text-zinc-400">Active • 800 × 500 px</span>
-                </div>
-              </div>
-              <span className="text-indigo-400 text-xs" title="Visible">👁</span>
-            </div>
-
-            {/* History Status Card */}
-            <div className="mt-4 p-3 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs space-y-2">
-              <span className="font-semibold uppercase tracking-wider text-[10px] text-zinc-400">
-                History State
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onUndo}
-                  disabled={!canUndo}
-                  className={`flex-1 py-1 px-2 rounded border text-[11px] transition ${
-                    canUndo
-                      ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
-                      : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  Undo (Ctrl+Z)
-                </button>
-                <button
-                  onClick={onRedo}
-                  disabled={!canRedo}
-                  className={`flex-1 py-1 px-2 rounded border text-[11px] transition ${
-                    canRedo
-                      ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
-                      : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  Redo (Ctrl+Y)
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
+        {/* TAB 2: Tool Properties */}
+        {activeTab === 'properties' && (
           <div className="flex flex-col gap-5 text-xs">
             {/* Tool Specific Sliders */}
             <div className="flex flex-col gap-2">
@@ -219,6 +195,61 @@ export default function RightSidebar({
               >
                 Fill Canvas with Foreground Color
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: Layers */}
+        {activeTab === 'layers' && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <span className="font-semibold uppercase tracking-wider text-[11px]">Layer Stack</span>
+              <span className="text-[11px] text-zinc-500">1 Layer</span>
+            </div>
+
+            {/* Active Drawing Canvas Layer */}
+            <div className="p-3 rounded-lg bg-zinc-800/80 border border-indigo-500/50 flex items-center justify-between text-xs shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded bg-white border border-zinc-600 flex items-center justify-center text-xs shadow-inner">
+                  🎨
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-zinc-100 font-medium">Drawing Canvas</span>
+                  <span className="text-[10px] text-zinc-400">Active • 800 × 500 px</span>
+                </div>
+              </div>
+              <span className="text-indigo-400 text-xs" title="Visible">👁</span>
+            </div>
+
+            {/* History Status Card */}
+            <div className="mt-4 p-3 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs space-y-2">
+              <span className="font-semibold uppercase tracking-wider text-[10px] text-zinc-400">
+                History State
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onUndo}
+                  disabled={!canUndo}
+                  className={`flex-1 py-1 px-2 rounded border text-[11px] transition ${
+                    canUndo
+                      ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
+                      : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
+                  }`}
+                >
+                  Undo (Ctrl+Z)
+                </button>
+                <button
+                  onClick={onRedo}
+                  disabled={!canRedo}
+                  className={`flex-1 py-1 px-2 rounded border text-[11px] transition ${
+                    canRedo
+                      ? 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
+                      : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
+                  }`}
+                >
+                  Redo (Ctrl+Y)
+                </button>
+              </div>
             </div>
           </div>
         )}

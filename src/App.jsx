@@ -5,6 +5,7 @@ import ToolOptionsBar from './components/ToolOptionsBar';
 import CanvasViewport from './components/CanvasViewport';
 import RightSidebar from './components/RightSidebar';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
+import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
 
 export default function App() {
   // Studio & Tool State
@@ -15,6 +16,9 @@ export default function App() {
   const [shapeFillEnabled, setShapeFillEnabled] = useState(false);
   const [shapeFillColor, setShapeFillColor] = useState('#6366f1');
   const [zoom, setZoom] = useState(100);
+
+  // Phase 3: Filter & Adjustment Pipeline State
+  const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
 
   // Canvas Reference
   const baseCanvasRef = useRef(null);
@@ -28,6 +32,9 @@ export default function App() {
     redo,
     initHistory
   } = useCanvasHistory(baseCanvasRef);
+
+  // Computed live filter CSS string for non-destructive GPU preview
+  const filterString = getFilterCSSString(adjustments);
 
   // Clear Canvas back to clean white artboard with history snapshot
   const handleClearCanvas = useCallback(() => {
@@ -48,6 +55,42 @@ export default function App() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     pushSnapshot();
   }, [baseCanvasRef, pushSnapshot]);
+
+  // Phase 3: Commit / Bake Adjustments into canvas pixels and record in history
+  const handleApplyAdjustments = useCallback(() => {
+    const canvas = baseCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const currentFilter = getFilterCSSString(adjustments);
+    if (currentFilter === 'none') return;
+
+    // 1. Create an offscreen buffer of the current artwork
+    const offscreen = document.createElement('canvas');
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const offCtx = offscreen.getContext('2d');
+    offCtx.drawImage(canvas, 0, 0);
+
+    // 2. Clear the base canvas and draw back through native 2D context filter
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.filter = currentFilter;
+    ctx.drawImage(offscreen, 0, 0);
+    ctx.restore();
+
+    // 3. Reset live sliders back to default so there is no double-filter
+    setAdjustments(DEFAULT_ADJUSTMENTS);
+
+    // 4. Record new pixel state into history stack for Undo / Redo
+    pushSnapshot();
+  }, [baseCanvasRef, adjustments, pushSnapshot]);
+
+  // Phase 3: Reset Adjustments back to default without touching canvas pixels
+  const handleResetAdjustments = useCallback(() => {
+    setAdjustments(DEFAULT_ADJUSTMENTS);
+  }, []);
 
   // Keyboard shortcuts for tools (B = Brush, E = Eraser, U = Rectangle, O = Circle, T = Text, G = Bucket, V = Select)
   useEffect(() => {
@@ -106,6 +149,7 @@ export default function App() {
         onClearCanvas={handleClearCanvas}
         baseCanvasRef={baseCanvasRef}
         pushSnapshot={pushSnapshot}
+        filterString={filterString}
       />
 
       {/* Contextual Tool Options Bar */}
@@ -140,6 +184,7 @@ export default function App() {
           shapeFillEnabled={shapeFillEnabled}
           shapeFillColor={shapeFillColor}
           zoom={zoom}
+          filterString={filterString}
           baseCanvasRef={baseCanvasRef}
           pushSnapshot={pushSnapshot}
           initHistory={initHistory}
@@ -147,7 +192,7 @@ export default function App() {
           canvasHeight={500}
         />
 
-        {/* Right Sidebar (Layers & Properties) */}
+        {/* Right Sidebar (Adjustments, Properties & Layers) */}
         <RightSidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -160,6 +205,10 @@ export default function App() {
           setShapeFillEnabled={setShapeFillEnabled}
           shapeFillColor={shapeFillColor}
           setShapeFillColor={setShapeFillColor}
+          adjustments={adjustments}
+          setAdjustments={setAdjustments}
+          onApplyAdjustments={handleApplyAdjustments}
+          onResetAdjustments={handleResetAdjustments}
           onClearCanvas={handleClearCanvas}
           onFillCanvas={handleFillCanvas}
           canUndo={canUndo}
