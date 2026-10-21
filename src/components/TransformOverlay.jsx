@@ -163,7 +163,7 @@ export default function TransformOverlay({
           width: `${box.width}px`,
           height: `${box.height}px`
         }}
-        className="absolute border-2 border-indigo-500 shadow-xl"
+        className="absolute border border-[#1473e6] shadow-xl"
         onPointerDown={(e) => handlePointerDown(e, 'move')}
       >
         {/* Live Scaled Content Canvas */}
@@ -179,13 +179,13 @@ export default function TransformOverlay({
             key={h.id}
             onPointerDown={(e) => handlePointerDown(e, h.id)}
             style={{ cursor: h.cursor }}
-            className={`absolute w-3 h-3 bg-white border-2 border-indigo-600 rounded-sm shadow-md transition-transform hover:scale-125 z-50 ${h.position}`}
+            className={`absolute w-2.5 h-2.5 bg-white border border-[#1473e6] rounded-[1px] shadow-sm transition-transform hover:scale-125 z-50 ${h.position}`}
           />
         ))}
 
         {/* Floating Action Bar */}
         <div
-          className="absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#181a22]/95 backdrop-blur border border-zinc-700 rounded-md px-2.5 py-1 text-xs text-zinc-200 shadow-2xl whitespace-nowrap z-50 animate-in fade-in duration-100"
+          className="absolute -bottom-9 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#202020]/95 backdrop-blur border border-[#383838] rounded-[2px] px-2.5 py-0.5 text-[11px] text-zinc-200 shadow-2xl whitespace-nowrap z-50 font-sans"
           onClick={(e) => e.stopPropagation()}
         >
           <span className="font-mono text-[10px] text-zinc-400">
@@ -197,7 +197,7 @@ export default function TransformOverlay({
               type="checkbox"
               checked={lockAspect}
               onChange={(e) => setLockAspect(e.target.checked)}
-              className="rounded accent-indigo-500 w-3 h-3"
+              className="rounded-[1px] accent-[#1473e6] w-3 h-3"
             />
             <span>Lock Ratio</span>
           </label>

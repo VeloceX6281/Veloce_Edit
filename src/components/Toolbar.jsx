@@ -28,7 +28,7 @@ export default function Toolbar({
       name: 'Marquee Tool',
       shortcut: 'M',
       icon: (
-        <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" strokeDasharray="3 3" />
+        <rect x="3.5" y="4.5" width="17" height="15" rx="1" strokeDasharray="3 3" />
       )
     },
     {
@@ -159,7 +159,7 @@ export default function Toolbar({
   };
 
   return (
-    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-2 gap-1 z-10 select-none overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <aside className="w-[38px] bg-[#282828] border-r border-[#1a1a1a] flex flex-col items-center py-1.5 gap-0.5 z-20 select-none shrink-0 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tools.map((tool) => {
         const isActive =
           activeTool === tool.id ||
@@ -174,35 +174,35 @@ export default function Toolbar({
             type="button"
             onClick={() => handleToolClick(tool.id)}
             title={`${tool.name} (${tool.shortcut})`}
-            className={`w-9 h-9 rounded-lg flex items-center justify-center transition group relative shrink-0 ${
+            className={`w-7 h-7 flex items-center justify-center rounded-[2px] transition group relative shrink-0 ${
               isActive
-                ? 'bg-indigo-600 text-white shadow'
-                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
+                ? 'bg-[#3a3a3a] text-white border-l-2 border-[#1473e6] shadow-sm'
+                : 'text-[#a0a0a0] hover:text-[#ffffff] hover:bg-[#383838]'
             }`}
           >
             <svg
-              className="w-5 h-5"
+              className="w-[18px] h-[18px]"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.8"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
               {tool.icon}
             </svg>
 
-            {/* Photoshop Style Tooltip */}
-            <span className="absolute left-12 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-150 z-50 shadow-xl">
-              {tool.name} <span className="text-zinc-400">({tool.shortcut})</span>
+            {/* Photoshop Desktop Tooltip */}
+            <span className="absolute left-9 px-2 py-0.5 rounded-[2px] bg-[#202020] border border-[#383838] text-[10px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-100 z-50 shadow-2xl font-sans">
+              {tool.name} <span className="text-[#888]">({tool.shortcut})</span>
             </span>
           </button>
         );
       })}
 
-      <div className="w-8 h-[1px] bg-zinc-800 my-1 shrink-0" />
+      <div className="w-6 h-[1px] bg-[#3a3a3a] my-1 shrink-0" />
 
-      {/* Authentic Photoshop Dual Color Swatch */}
+      {/* Dual Color Swatch */}
       <DualColorSwatch
         foregroundColor={foregroundColor}
         backgroundColor={backgroundColor}
@@ -213,8 +213,8 @@ export default function Toolbar({
 
       {/* Brush Size Indicator */}
       <div
-        className="w-7 h-6 rounded-md bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-[10px] text-zinc-300 font-mono mt-0.5 shrink-0"
-        title={`Current Brush Size: ${brushSize}px`}
+        className="w-6 h-4 rounded-[1px] bg-[#202020] border border-[#383838] flex items-center justify-center text-[9px] text-zinc-400 font-mono mt-0.5 shrink-0"
+        title={`Brush Size: ${brushSize}px`}
       >
         {brushSize}
       </div>

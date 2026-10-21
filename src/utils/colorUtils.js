@@ -9,7 +9,7 @@ export function hexToRgb(hex) {
   }
   const num = parseInt(cleanHex, 16);
   if (isNaN(num) || cleanHex.length !== 6) {
-    return { r: 99, g: 102, b: 241 }; // Default indigo
+    return { r: 20, g: 115, b: 230 }; // Default Photoshop blue #1473e6
   }
   return {
     r: (num >> 16) & 255,

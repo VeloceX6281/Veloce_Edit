@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 
 export default function Header({
-  zoom,
+  zoom = 100,
   setZoom,
   onFitToScreen,
   canUndo,
@@ -13,10 +13,31 @@ export default function Header({
   onOpenExportModal,
   onAddLayer,
   onDeleteLayer,
-  layersCount
+  layersCount = 1,
+  showRulers,
+  onToggleRulers,
+  showGuides,
+  onToggleGuides,
+  onSelectAll,
+  onDeselect,
+  onInvertMarquee,
+  onFreeTransform,
+  documentName = 'Untitled-1.png'
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
+  const menuBarRef = useRef(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (menuBarRef.current && !menuBarRef.current.contains(e.target)) {
+        setActiveMenu(null);
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   // File chosen via input
   const handleFileChange = (e) => {
@@ -42,9 +63,123 @@ export default function Header({
     e.target.value = '';
   };
 
+  const menuItems = [
+    {
+      id: 'file',
+      label: 'File',
+      children: [
+        { label: 'New Project...', shortcut: 'Ctrl+N', action: () => onClearCanvas && onClearCanvas() },
+        { label: 'Open / Import Image...', shortcut: 'Ctrl+O', action: () => fileInputRef.current?.click() },
+        { divider: true },
+        { label: 'Export As (PNG, JPG)...', shortcut: 'Ctrl+E', action: onOpenExportModal },
+        { label: 'Quick Export as PNG', action: onOpenExportModal },
+        { divider: true },
+        { label: 'Close Document', shortcut: 'Ctrl+W', action: () => onClearCanvas && onClearCanvas() }
+      ]
+    },
+    {
+      id: 'edit',
+      label: 'Edit',
+      children: [
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: onUndo, disabled: !canUndo },
+        { label: 'Redo', shortcut: 'Ctrl+Y', action: onRedo, disabled: !canRedo },
+        { divider: true },
+        { label: 'Free Transform', shortcut: 'Ctrl+T', action: onFreeTransform },
+        { label: 'Clear Active Layer', shortcut: 'Del', action: onClearCanvas },
+        { divider: true },
+        { label: 'Fill Layer...', shortcut: 'Alt+Backspace', action: onClearCanvas },
+        { label: 'Preferences...', shortcut: 'Ctrl+K', disabled: true }
+      ]
+    },
+    {
+      id: 'image',
+      label: 'Image',
+      children: [
+        { label: 'Mode: RGB Color (8 Bit)', disabled: true, checked: true },
+        { divider: true },
+        { label: 'Adjustments (Right Panel)', shortcut: 'F8', action: () => {} },
+        { label: 'Canvas Size...', action: onFitToScreen },
+        { label: 'Crop Canvas', action: () => {} },
+        { divider: true },
+        { label: 'Duplicate Image...', action: () => {} }
+      ]
+    },
+    {
+      id: 'layer',
+      label: 'Layer',
+      children: [
+        { label: 'New Layer', shortcut: 'Shift+Ctrl+N', action: onAddLayer },
+        { label: 'Duplicate Layer', shortcut: 'Ctrl+J', action: onAddLayer },
+        { label: 'Delete Layer', action: onDeleteLayer, disabled: layersCount <= 1 },
+        { divider: true },
+        { label: 'Lock Layer', disabled: true },
+        { label: 'Merge Visible', shortcut: 'Shift+Ctrl+E', disabled: true }
+      ]
+    },
+    {
+      id: 'select',
+      label: 'Select',
+      children: [
+        { label: 'All', shortcut: 'Ctrl+A', action: onSelectAll },
+        { label: 'Deselect', shortcut: 'Ctrl+D', action: onDeselect },
+        { label: 'Inverse Selection', shortcut: 'Shift+Ctrl+I', action: onInvertMarquee },
+        { divider: true },
+        { label: 'Select Subject (AI)', disabled: true }
+      ]
+    },
+    {
+      id: 'filter',
+      label: 'Filter',
+      children: [
+        { label: 'Last Filter (Live)', shortcut: 'Ctrl+F', action: () => {} },
+        { divider: true },
+        { label: 'Blur (Gaussian / Box)...', action: () => {} },
+        { label: 'Brightness & Contrast...', action: () => {} },
+        { label: 'Invert / Negative', shortcut: 'Ctrl+I', action: () => {} },
+        { label: 'Grayscale / Desaturate', shortcut: 'Shift+Ctrl+U', action: () => {} }
+      ]
+    },
+    {
+      id: 'view',
+      label: 'View',
+      children: [
+        { label: 'Rulers', shortcut: 'Ctrl+R', action: onToggleRulers, checked: showRulers },
+        { label: 'Guides', shortcut: 'Ctrl+;', action: onToggleGuides, checked: showGuides },
+        { divider: true },
+        { label: 'Zoom In', shortcut: 'Ctrl++', action: () => setZoom((z) => Math.min(500, z + 25)) },
+        { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => setZoom((z) => Math.max(10, z - 25)) },
+        { label: 'Fit on Screen', shortcut: 'Ctrl+0', action: onFitToScreen },
+        { label: '100% (Actual Pixels)', shortcut: 'Ctrl+1', action: () => setZoom(100) }
+      ]
+    },
+    {
+      id: 'window',
+      label: 'Window',
+      children: [
+        { label: 'Tools', checked: true },
+        { label: 'Options Bar', checked: true },
+        { label: 'Layers (F7)', checked: true },
+        { label: 'History', checked: true },
+        { label: 'Adjustments / Filters', checked: true },
+        { label: 'Color & Swatches', checked: true }
+      ]
+    },
+    {
+      id: 'help',
+      label: 'Help',
+      children: [
+        { label: 'About VeloceEdit (Photoshop Web)', action: () => alert('VeloceEdit - Authentic Adobe Photoshop Web Experience') },
+        { label: 'Keyboard Shortcuts Cheatsheet', action: () => alert('V: Move\nM: Marquee\nL: Lasso\nC: Crop\nI: Eyedropper\nB: Brush\nS: Stamp\nE: Eraser\nG: Bucket\nT: Type\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+Z: Undo\nCtrl+Y: Redo') }
+      ]
+    }
+  ];
+
   return (
-    <header className="h-12 bg-[#181a20] border-b border-zinc-800 flex items-center justify-between px-4 z-20 select-none">
-      {/* Hidden File Input for Image Import */}
+    <header
+      ref={menuBarRef}
+      className="h-7 bg-[#2b2b2b] border-b border-[#181818] flex items-center justify-between px-2 z-30 select-none text-[11px] font-sans"
+    >
+      {/* Hidden File Input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -53,231 +188,162 @@ export default function Header({
         className="hidden"
       />
 
-      {/* Brand & Studio Menus */}
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xs text-white shadow-lg shadow-indigo-500/20">
-            V
-          </div>
-          <span className="font-semibold tracking-wide text-sm text-zinc-100">VeloceEdit</span>
+      {/* Left: Photoshop Icon & Menu Bar */}
+      <div className="flex items-center gap-1">
+        {/* Authentic Photoshop 'Ps' Logo Box */}
+        <div
+          className="w-5 h-5 bg-[#001e36] text-[#31a8ff] font-bold text-[10px] flex items-center justify-center rounded-[2px] border border-[#003764] mr-1.5 shadow-sm select-none cursor-default"
+          title="Adobe Photoshop Web (VeloceEdit)"
+        >
+          Ps
         </div>
 
-        {/* Studio Menus */}
-        <nav className="relative flex items-center gap-1 text-xs text-zinc-400">
-          {/* File Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setActiveMenu(activeMenu === 'file' ? null : 'file')}
-              className={`px-2.5 py-1 rounded transition ${
-                activeMenu === 'file' ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800 hover:text-zinc-100'
-              }`}
-            >
-              File
-            </button>
-            {activeMenu === 'file' && (
-              <div
-                className="absolute left-0 top-8 w-48 bg-[#1f222b] border border-zinc-700/80 rounded-md py-1 shadow-2xl z-50 text-xs flex flex-col"
-                onMouseLeave={() => setActiveMenu(null)}
-              >
-                <button
-                  onClick={() => {
-                    fileInputRef.current?.click();
-                    setActiveMenu(null);
-                  }}
-                  className="px-3 py-1.5 text-left text-zinc-200 hover:bg-indigo-600 hover:text-white flex items-center justify-between"
-                >
-                  <span>Import Image...</span>
-                  <span className="text-[10px] text-zinc-400">Ctrl+O</span>
-                </button>
-                <button
-                  onClick={() => {
-                    onOpenExportModal();
-                    setActiveMenu(null);
-                  }}
-                  className="px-3 py-1.5 text-left text-zinc-200 hover:bg-indigo-600 hover:text-white flex items-center justify-between"
-                >
-                  <span>Export Artwork...</span>
-                  <span className="text-[10px] text-zinc-400">Ctrl+E</span>
-                </button>
-                <div className="h-[1px] bg-zinc-700/60 my-1" />
-                <button
-                  onClick={() => {
-                    onClearCanvas();
-                    setActiveMenu(null);
-                  }}
-                  className="px-3 py-1.5 text-left text-rose-400 hover:bg-rose-600 hover:text-white flex items-center justify-between"
-                >
-                  <span>Clear Active Layer</span>
-                </button>
-              </div>
-            )}
-          </div>
+        {/* Dropdown Menus */}
+        <nav className="flex items-center text-zinc-300">
+          {menuItems.map((menu) => {
+            const isOpen = activeMenu === menu.id;
 
-          {/* Edit Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setActiveMenu(activeMenu === 'edit' ? null : 'edit')}
-              className={`px-2.5 py-1 rounded transition ${
-                activeMenu === 'edit' ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800 hover:text-zinc-100'
-              }`}
-            >
-              Edit
-            </button>
-            {activeMenu === 'edit' && (
-              <div
-                className="absolute left-0 top-8 w-44 bg-[#1f222b] border border-zinc-700/80 rounded-md py-1 shadow-2xl z-50 text-xs flex flex-col"
-                onMouseLeave={() => setActiveMenu(null)}
-              >
+            return (
+              <div key={menu.id} className="relative">
                 <button
-                  disabled={!canUndo}
-                  onClick={() => {
-                    onUndo();
-                    setActiveMenu(null);
+                  type="button"
+                  onClick={() => setActiveMenu(isOpen ? null : menu.id)}
+                  onMouseEnter={() => {
+                    if (activeMenu !== null) setActiveMenu(menu.id);
                   }}
-                  className={`px-3 py-1.5 text-left flex items-center justify-between ${
-                    canUndo ? 'text-zinc-200 hover:bg-indigo-600 hover:text-white' : 'text-zinc-600 cursor-not-allowed'
+                  className={`px-2 py-0.5 rounded-[2px] transition ${
+                    isOpen
+                      ? 'bg-[#1473e6] text-white'
+                      : 'hover:bg-[#383838] hover:text-white text-zinc-300'
                   }`}
                 >
-                  <span>Undo</span>
-                  <span className="text-[10px] text-zinc-400">Ctrl+Z</span>
+                  {menu.label}
                 </button>
-                <button
-                  disabled={!canRedo}
-                  onClick={() => {
-                    onRedo();
-                    setActiveMenu(null);
-                  }}
-                  className={`px-3 py-1.5 text-left flex items-center justify-between ${
-                    canRedo ? 'text-zinc-200 hover:bg-indigo-600 hover:text-white' : 'text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  <span>Redo</span>
-                  <span className="text-[10px] text-zinc-400">Ctrl+Y</span>
-                </button>
-                <div className="h-[1px] bg-zinc-700/60 my-1" />
-                <button
-                  onClick={() => {
-                    onAddLayer();
-                    setActiveMenu(null);
-                  }}
-                  className="px-3 py-1.5 text-left text-zinc-200 hover:bg-indigo-600 hover:text-white"
-                >
-                  Add New Layer
-                </button>
-                <button
-                  disabled={layersCount <= 1}
-                  onClick={() => {
-                    onDeleteLayer();
-                    setActiveMenu(null);
-                  }}
-                  className={`px-3 py-1.5 text-left ${
-                    layersCount > 1
-                      ? 'text-zinc-200 hover:bg-rose-600 hover:text-white'
-                      : 'text-zinc-600 cursor-not-allowed'
-                  }`}
-                >
-                  Delete Active Layer
-                </button>
+
+                {isOpen && (
+                  <div
+                    className="absolute left-0 top-6 min-w-[200px] bg-[#252525] border border-[#383838] py-1 shadow-2xl z-50 text-[11px] text-zinc-200 rounded-[2px]"
+                    onMouseLeave={() => setActiveMenu(null)}
+                  >
+                    {menu.children.map((child, idx) => {
+                      if (child.divider) {
+                        return <div key={idx} className="h-[1px] bg-[#383838] my-1" />;
+                      }
+
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          disabled={child.disabled}
+                          onClick={() => {
+                            if (child.action) child.action();
+                            setActiveMenu(null);
+                          }}
+                          className={`w-full px-3 py-1 text-left flex items-center justify-between gap-4 transition ${
+                            child.disabled
+                              ? 'text-zinc-600 cursor-not-allowed'
+                              : 'hover:bg-[#1473e6] hover:text-white text-zinc-200'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            {child.checked ? (
+                              <span className="text-[10px] w-2">✓</span>
+                            ) : (
+                              <span className="w-2" />
+                            )}
+                            {child.label}
+                          </span>
+                          {child.shortcut && (
+                            <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 font-mono">
+                              {child.shortcut}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })}
         </nav>
-
-        {/* Undo / Redo Quick Action Buttons with Tooltips */}
-        <div className="flex items-center gap-1 bg-zinc-900/80 border border-zinc-800 rounded px-1 py-0.5">
-          <button
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="Undo (Ctrl+Z)"
-            className={`w-7 h-6 rounded flex items-center justify-center transition ${
-              canUndo
-                ? 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer'
-                : 'text-zinc-600 cursor-not-allowed'
-            }`}
-          >
-            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 10h10a5 5 0 015 5v2m-15-7l4-4m-4 4l4 4" />
-            </svg>
-          </button>
-
-          <button
-            onClick={onRedo}
-            disabled={!canRedo}
-            title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
-            className={`w-7 h-6 rounded flex items-center justify-center transition ${
-              canRedo
-                ? 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer'
-                : 'text-zinc-600 cursor-not-allowed'
-            }`}
-          >
-            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 10H11a5 5 0 00-5 5v2m15-7l-4-4m4 4l-4 4" />
-            </svg>
-          </button>
-        </div>
       </div>
 
-      {/* Right Controls: Zoom & Fit to Screen, Import Image, Export */}
-      <div className="flex items-center gap-3">
-        {/* Zoom & Fit to Screen Controls */}
-        <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-400 gap-0.5">
+      {/* Right Controls: Document Info, Compact Quick Actions, Compact Zoom */}
+      <div className="flex items-center gap-2.5 text-zinc-400">
+        {/* Document Status */}
+        <div className="text-[10px] text-zinc-400 font-mono hidden sm:inline-block">
+          <span className="text-zinc-300">{documentName}</span> @ {zoom}% (RGB/8)
+        </div>
+
+        <div className="w-[1px] h-3 bg-[#3a3a3a]" />
+
+        {/* Compact Quick Actions: Import & Export */}
+        <div className="flex items-center gap-1">
           <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-5 h-5 rounded-[2px] bg-[#222] hover:bg-[#383838] hover:text-white text-zinc-300 border border-[#383838] flex items-center justify-center transition"
+            title="Open / Import Image (Ctrl+O)"
+          >
+            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenExportModal}
+            className="w-5 h-5 rounded-[2px] bg-[#1473e6] hover:bg-[#0d66d0] text-white flex items-center justify-center transition shadow-sm"
+            title="Export Artwork (Ctrl+E)"
+          >
+            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="w-[1px] h-3 bg-[#3a3a3a]" />
+
+        {/* Compact Zoom & Fit Controls */}
+        <div className="flex items-center bg-[#202020] border border-[#383838] rounded-[2px] px-1 py-0 text-[10px] text-zinc-300">
+          <button
+            type="button"
             onClick={() => setZoom((z) => Math.max(10, z - 25))}
-            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-100 transition active:scale-95 font-medium"
-            title="Zoom Out"
+            className="w-4 h-4 flex items-center justify-center hover:bg-[#383838] hover:text-white transition"
+            title="Zoom Out (Ctrl+-)"
           >
             -
           </button>
           <button
+            type="button"
             onClick={() => setZoom(100)}
-            className="px-2 font-mono text-[11px] text-zinc-300 hover:text-indigo-400 transition"
-            title="Reset Zoom to 100%"
+            className="px-1.5 font-mono hover:text-[#31a8ff] transition"
+            title="Reset Zoom to 100% (Ctrl+1)"
           >
             {zoom}%
           </button>
           <button
+            type="button"
             onClick={() => setZoom((z) => Math.min(500, z + 25))}
-            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 hover:text-zinc-100 transition active:scale-95 font-medium"
-            title="Zoom In"
+            className="w-4 h-4 flex items-center justify-center hover:bg-[#383838] hover:text-white transition"
+            title="Zoom In (Ctrl++)"
           >
             +
           </button>
           <button
+            type="button"
             onClick={onFitToScreen}
-            className="ml-1 px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-indigo-400 hover:text-indigo-300 text-[10px] font-medium transition active:scale-95 flex items-center justify-center"
-            title="Fit Canvas to Viewport"
+            className="ml-1 px-1.5 rounded-[2px] bg-[#2b2b2b] hover:bg-[#383838] text-[#31a8ff] hover:text-white text-[9px] font-semibold transition"
+            title="Fit Canvas to Screen (Ctrl+0)"
           >
-            Fit
+            FIT
           </button>
         </div>
-
-        {/* Import Image Button */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-3 py-1.5 rounded flex items-center text-xs font-medium transition shadow-sm cursor-pointer"
-          title="Import an image file from disk"
-        >
-          <svg className="w-4 h-4 mr-1.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
-          </svg>
-          Import Image
-        </button>
-
-        {/* High-Res Multi-Format Export Button */}
-        <button
-          onClick={onOpenExportModal}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded flex items-center text-xs font-medium transition shadow-sm shadow-indigo-600/30 cursor-pointer"
-          title="Export multi-layer artwork to PNG/JPEG"
-        >
-          <svg className="w-4 h-4 mr-1.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Export
-        </button>
       </div>
     </header>
   );

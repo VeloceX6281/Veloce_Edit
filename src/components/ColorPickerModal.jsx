@@ -315,30 +315,30 @@ export default function ColorPickerModal({
             </div>
 
             {/* Hex Input */}
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900/80 border border-zinc-800">
+            <div className="flex items-center gap-2 p-2 rounded bg-[#1e1e1e] border border-[#383838]">
               <span className="text-zinc-400 text-[11px] font-mono">Hex:</span>
               <input
                 type="text"
                 value={hex.toUpperCase()}
                 onChange={handleHexChange}
                 maxLength={7}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5 font-mono text-zinc-100 text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full bg-[#282828] border border-[#383838] rounded-[2px] px-2 py-0.5 font-mono text-zinc-100 text-xs focus:outline-none focus:border-[#1473e6]"
               />
             </div>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-700/70">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#383838]">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+            className="px-4 py-1.5 rounded-[2px] text-xs text-zinc-300 hover:text-white hover:bg-[#383838] transition border border-[#383838]"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
-            className="px-5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-md shadow-indigo-600/30 transition cursor-pointer"
+            className="px-5 py-1.5 rounded-[2px] bg-[#1473e6] hover:bg-[#0d66d0] text-white font-medium text-xs shadow-sm transition cursor-pointer"
           >
             OK
           </button>

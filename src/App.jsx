@@ -35,8 +35,8 @@ export default function App() {
   // Marquee Selection State (Phase 5B)
   const [marqueeSelection, setMarqueeSelection] = useState(null);
 
-  // Authentic Dual Color Swatches (Phase 5B)
-  const [foregroundColor, setForegroundColor] = useState('#6366f1');
+  // Authentic Dual Color Swatches (Photoshop Default: Black & White)
+  const [foregroundColor, setForegroundColor] = useState('#000000');
   const [backgroundColor, setBackgroundColor] = useState('#ffffff');
   const [colorPickerTarget, setColorPickerTarget] = useState(null); // 'foreground' | 'background' | null
 
@@ -50,7 +50,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('layers');
   const [brushSize, setBrushSize] = useState(8);
   const [shapeFillEnabled, setShapeFillEnabled] = useState(false);
-  const [shapeFillColor, setShapeFillColor] = useState('#6366f1');
+  const [shapeFillColor, setShapeFillColor] = useState('#1473e6');
 
   // Filter & Adjustment Pipeline State
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
@@ -514,8 +514,8 @@ export default function App() {
   }, [handleInvertMarquee, handleResetDefaultColors, handleSwapColors]);
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0f1117] text-zinc-200 select-none overflow-hidden font-sans">
-      {/* Studio Header Bar */}
+    <div className="flex flex-col h-screen w-screen bg-[#202020] text-zinc-200 select-none overflow-hidden font-sans">
+      {/* Studio Header Bar (Photoshop Native Menu Bar) */}
       <Header
         zoom={zoom}
         setZoom={setZoom}
@@ -530,6 +530,24 @@ export default function App() {
         onAddLayer={handleAddLayer}
         onDeleteLayer={handleDeleteLayer}
         layersCount={layers.length}
+        showRulers={showRulers}
+        onToggleRulers={() => setShowRulers((r) => !r)}
+        showGuides={showGuides}
+        onToggleGuides={() => setShowGuides((g) => !g)}
+        onSelectAll={() =>
+          setMarqueeSelection({
+            type: 'rect',
+            x: 0,
+            y: 0,
+            width: canvasWidth,
+            height: canvasHeight,
+            inverted: false
+          })
+        }
+        onDeselect={() => setMarqueeSelection(null)}
+        onInvertMarquee={handleInvertMarquee}
+        onFreeTransform={() => setActiveTool('select')}
+        documentName="Untitled-1.png"
       />
 
       {/* Contextual Tool Options Bar */}
@@ -552,6 +570,8 @@ export default function App() {
         onToggleRulers={() => setShowRulers((r) => !r)}
         showGuides={showGuides}
         onToggleGuides={() => setShowGuides((g) => !g)}
+        onCommitCrop={handleCommitCrop}
+        onCancelCrop={() => setActiveTool('select')}
       />
 
       {/* Main Studio Workspace */}
@@ -597,6 +617,7 @@ export default function App() {
           setGuides={setGuides}
           marqueeSelection={marqueeSelection}
           setMarqueeSelection={setMarqueeSelection}
+          documentName="Untitled-1.png"
         />
 
         {/* Right Sidebar (Layers, History, Adjustments & Properties) */}

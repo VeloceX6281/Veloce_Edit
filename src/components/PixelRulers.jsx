@@ -50,11 +50,11 @@ export default function PixelRulers({
     canvas.height = rulerSize;
 
     // Background
-    ctx.fillStyle = '#181a20';
+    ctx.fillStyle = '#262626';
     ctx.fillRect(0, 0, width, rulerSize);
 
     // Border
-    ctx.strokeStyle = '#27272a';
+    ctx.strokeStyle = '#383838';
     ctx.beginPath();
     ctx.moveTo(0, rulerSize - 0.5);
     ctx.lineTo(width, rulerSize - 0.5);
@@ -63,8 +63,8 @@ export default function PixelRulers({
     const { originX } = getCanvasOrigin();
     const { step, minor } = getTickStep();
 
-    ctx.fillStyle = '#71717a';
-    ctx.strokeStyle = '#3f3f46';
+    ctx.fillStyle = '#8e8e8e';
+    ctx.strokeStyle = '#484848';
     ctx.font = '9px monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -114,11 +114,11 @@ export default function PixelRulers({
     canvas.height = height;
 
     // Background
-    ctx.fillStyle = '#181a20';
+    ctx.fillStyle = '#262626';
     ctx.fillRect(0, 0, rulerSize, height);
 
     // Border
-    ctx.strokeStyle = '#27272a';
+    ctx.strokeStyle = '#383838';
     ctx.beginPath();
     ctx.moveTo(rulerSize - 0.5, 0);
     ctx.lineTo(rulerSize - 0.5, height);
@@ -127,8 +127,8 @@ export default function PixelRulers({
     const { originY } = getCanvasOrigin();
     const { step, minor } = getTickStep();
 
-    ctx.fillStyle = '#71717a';
-    ctx.strokeStyle = '#3f3f46';
+    ctx.fillStyle = '#8e8e8e';
+    ctx.strokeStyle = '#484848';
     ctx.font = '8px monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -271,7 +271,7 @@ export default function PixelRulers({
 
       {/* Top-Left Corner Box */}
       <div
-        className="absolute top-0 left-0 w-5 h-5 bg-[#181a20] border-r border-b border-zinc-800 z-40 flex items-center justify-center text-[8px] font-mono text-zinc-500"
+        className="absolute top-0 left-0 w-5 h-5 bg-[#262626] border-r border-b border-[#383838] z-40 flex items-center justify-center text-[8px] font-mono text-zinc-400 select-none"
         title="Pixels (px)"
       >
         px

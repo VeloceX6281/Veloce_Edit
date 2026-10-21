@@ -97,7 +97,7 @@ export default function TextOverlay({
           type="button"
           onClick={() => setIsBold(!isBold)}
           className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs transition ${
-            isBold ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+            isBold ? 'bg-[#1473e6] text-white' : 'text-zinc-400 hover:bg-[#383838] hover:text-zinc-200'
           }`}
           title="Bold (Ctrl+B)"
         >
@@ -108,7 +108,7 @@ export default function TextOverlay({
           type="button"
           onClick={() => setIsItalic(!isItalic)}
           className={`w-6 h-6 rounded flex items-center justify-center italic text-xs transition ${
-            isItalic ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+            isItalic ? 'bg-[#1473e6] text-white' : 'text-zinc-400 hover:bg-[#383838] hover:text-zinc-200'
           }`}
           title="Italic (Ctrl+I)"
         >
@@ -134,7 +134,7 @@ export default function TextOverlay({
         <button
           type="button"
           onClick={handleCommit}
-          className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[11px] flex items-center gap-1 shadow-sm transition"
+          className="px-2 py-0.5 rounded bg-[#1473e6] hover:bg-[#0d66d0] text-white font-medium text-[11px] flex items-center gap-1 shadow-sm transition"
           title="Commit Text (Enter)"
         >
           <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
@@ -146,7 +146,7 @@ export default function TextOverlay({
         <button
           type="button"
           onClick={onCancel}
-          className="px-1.5 py-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 text-[11px] transition"
+          className="px-1.5 py-0.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-[#383838] text-[11px] transition"
           title="Cancel (Esc)"
         >
           ✕
@@ -154,7 +154,7 @@ export default function TextOverlay({
       </div>
 
       {/* WYSIWYG Editable Text Box */}
-      <div className="relative min-w-[140px] border-2 border-dashed border-indigo-500 bg-black/40 rounded p-1.5 shadow-xl backdrop-blur-[2px]">
+      <div className="relative min-w-[140px] border border-dashed border-[#1473e6] bg-black/40 rounded-[2px] p-1.5 shadow-xl backdrop-blur-[2px]">
         <textarea
           ref={textareaRef}
           value={text}

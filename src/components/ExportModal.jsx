@@ -194,7 +194,7 @@ export default function ExportModal({
                 type="checkbox"
                 checked={includeBackground}
                 onChange={(e) => setIncludeBackground(e.target.checked)}
-                className="rounded accent-indigo-500 w-3.5 h-3.5"
+                className="rounded-[1px] accent-[#1473e6] w-3.5 h-3.5"
               />
               <span className="text-[11px]">Include white background (Uncheck for transparency)</span>
             </label>
@@ -202,22 +202,22 @@ export default function ExportModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
+        <div className="flex items-center justify-between pt-3 border-t border-[#383838]">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition"
+            className="px-3 py-1.5 rounded-[2px] text-xs text-zinc-300 hover:text-white hover:bg-[#383838] transition border border-[#383838]"
           >
             Cancel
           </button>
 
           <button
             onClick={handleDownload}
-            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+            className="px-4 py-1.5 rounded-[2px] bg-[#1473e6] hover:bg-[#0d66d0] text-white font-medium text-xs flex items-center gap-2 shadow-sm transition cursor-pointer"
           >
-            <svg className="w-4 h-4 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            Download {format.toUpperCase()}
+            Export {format.toUpperCase()}
           </button>
         </div>
       </div>

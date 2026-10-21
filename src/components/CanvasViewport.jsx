@@ -33,7 +33,8 @@ export default function CanvasViewport({
   guides = [],
   setGuides,
   marqueeSelection,
-  setMarqueeSelection
+  setMarqueeSelection,
+  documentName = 'Untitled-1.png'
 }) {
   const previewCanvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -691,34 +692,51 @@ export default function CanvasViewport({
   const activeLayerName = layers.find((l) => l.id === activeLayerId)?.name || 'Layer';
 
   return (
-    <main
-      ref={containerRef}
-      onWheel={handleWheel}
-      className="flex-1 bg-[#090a0f] relative overflow-hidden flex items-center justify-center p-8 select-none"
-    >
-      {/* Pixel Rulers (Framing Top & Left Viewport) */}
-      <PixelRulers
-        viewportRef={containerRef}
-        canvasWidth={canvasWidth}
-        canvasHeight={canvasHeight}
-        zoom={zoom}
-        pan={pan}
-        cursorPos={cursorPos}
-        showRulers={showRulers}
-        showGuides={showGuides}
-        guides={guides}
-        setGuides={setGuides}
-      />
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#1f1f1f] select-none">
+      {/* Photoshop Document Tab Bar */}
+      <div className="h-7 bg-[#232323] border-b border-[#181818] flex items-center px-2 z-10 shrink-0">
+        <div className="flex items-center gap-2 bg-[#1f1f1f] text-zinc-200 border-t-2 border-[#1473e6] px-3 py-1 text-[11px] font-sans border-r border-[#181818] border-l border-[#181818] rounded-t-[2px] shadow-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6] inline-block" />
+          <span className="font-medium text-zinc-100">{documentName}</span>
+          <span className="text-[#888]">@ {zoom}% (RGB/8)</span>
+          <button
+            type="button"
+            className="text-zinc-500 hover:text-zinc-200 ml-1.5 text-xs hover:bg-[#383838] rounded-[2px] w-4 h-4 flex items-center justify-center leading-none"
+            title="Close Tab"
+          >
+            ×
+          </button>
+        </div>
+      </div>
 
-      {/* Canvas Viewport Container with Smooth Zoom & Pan Transforms */}
-      <div
-        className="relative shadow-2xl shadow-black/90 rounded border border-zinc-800 bg-[#1e2029] overflow-hidden transition-transform duration-75 origin-center"
-        style={{
-          width: `${canvasWidth}px`,
-          height: `${canvasHeight}px`,
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`
-        }}
+      <main
+        ref={containerRef}
+        onWheel={handleWheel}
+        className="flex-1 bg-[#1f1f1f] relative overflow-hidden flex items-center justify-center p-8 select-none"
       >
+        {/* Pixel Rulers (Framing Top & Left Viewport) */}
+        <PixelRulers
+          viewportRef={containerRef}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          zoom={zoom}
+          pan={pan}
+          cursorPos={cursorPos}
+          showRulers={showRulers}
+          showGuides={showGuides}
+          guides={guides}
+          setGuides={setGuides}
+        />
+
+        {/* Canvas Viewport Container with Smooth Zoom & Pan Transforms */}
+        <div
+          className="relative shadow-[0_0_25px_rgba(0,0,0,0.65)] border border-[#2d2d2d] bg-[#1e2029] overflow-hidden transition-transform duration-75 origin-center"
+          style={{
+            width: `${canvasWidth}px`,
+            height: `${canvasHeight}px`,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`
+          }}
+        >
         {/* Subtle Checkered Transparency Background */}
         <div
           className="absolute inset-0 bg-white"
@@ -820,42 +838,44 @@ export default function CanvasViewport({
       </div>
 
       {/* Floating Canvas Status Badge */}
-      <div className="absolute bottom-3 left-4 bg-zinc-900/90 backdrop-blur-md border border-zinc-800 rounded-md px-3 py-1 flex items-center gap-3 text-xs text-zinc-400 shadow-lg z-20">
+      <div className="absolute bottom-3 left-8 bg-[#222]/90 border border-[#383838] rounded-[2px] px-3 py-1 flex items-center gap-3 text-[11px] text-zinc-300 shadow-xl z-20 font-sans backdrop-blur-[2px]">
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6]" />
           <span>
-            Active: <strong className="text-zinc-200">{activeLayerName}</strong>
+            Layer: <strong className="text-zinc-100">{activeLayerName}</strong>
           </span>
         </div>
-        <span>|</span>
-        <span>Tool: <strong className="text-zinc-200 capitalize">{activeTool}</strong></span>
-        <span>|</span>
-        <span>{canvasWidth} × {canvasHeight} px</span>
-        <span>|</span>
-        <span>Zoom: <strong className="text-zinc-200">{zoom}%</strong></span>
+        <span className="text-[#383838]">|</span>
+        <span>Tool: <strong className="text-zinc-100 capitalize">{activeTool}</strong></span>
+        <span className="text-[#383838]">|</span>
+        <span className="font-mono text-zinc-300">{canvasWidth} × {canvasHeight} px</span>
+        <span className="text-[#383838]">|</span>
+        <span>Zoom: <strong className="text-[#31a8ff]">{zoom}%</strong></span>
         {cursorPos.inside && (
           <>
-            <span>|</span>
-            <span className="font-mono text-[11px] text-zinc-300">
+            <span className="text-[#383838]">|</span>
+            <span className="font-mono text-[10px] text-zinc-300">
               X: {cursorPos.x}, Y: {cursorPos.y}
             </span>
           </>
         )}
         {marqueeSelection && (
           <>
-            <span>|</span>
-            <span className="text-[10px] text-indigo-400 font-medium">
+            <span className="text-[#383838]">|</span>
+            <span className="text-[10px] text-[#31a8ff] font-medium">
               Selection Active
             </span>
           </>
         )}
         <button
+          type="button"
           onClick={onFitToScreen}
-          className="ml-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+          className="ml-1 text-[10px] text-[#31a8ff] hover:text-white font-medium cursor-pointer"
         >
-          Fit
+          Fit (Ctrl+0)
         </button>
       </div>
     </main>
+    </div>
   );
 }
