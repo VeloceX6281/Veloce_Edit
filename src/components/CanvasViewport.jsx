@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import TextOverlay from './TextOverlay';
 import TransformOverlay from './TransformOverlay';
 import CropOverlay from './CropOverlay';
+import PixelRulers from './PixelRulers';
+import MarchingAntsOverlay from './MarchingAntsOverlay';
 import { getLayerContentBounds } from '../utils/transformUtils';
 
 export default function CanvasViewport({
@@ -24,7 +26,14 @@ export default function CanvasViewport({
   initHistory,
   onCommitCrop,
   canvasWidth = 800,
-  canvasHeight = 500
+  canvasHeight = 500,
+  // Phase 5B props
+  showRulers = true,
+  showGuides = true,
+  guides = [],
+  setGuides,
+  marqueeSelection,
+  setMarqueeSelection
 }) {
   const previewCanvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -39,6 +48,10 @@ export default function CanvasViewport({
   const shapeStartRef = useRef({ x: 0, y: 0 });
   const lastMousePosRef = useRef({ x: 0, y: 0 });
 
+  // Marquee Drag State
+  const isDrawingMarqueeRef = useRef(false);
+  const marqueeStartRef = useRef({ x: 0, y: 0 });
+
   // Panning State (Spacebar or Hand Tool)
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const isPanningRef = useRef(false);
@@ -52,7 +65,6 @@ export default function CanvasViewport({
 
   // Free Transform State
   const [transformState, setTransformState] = useState(null);
-  // { box, offscreenCanvas, origBox }
 
   // Crop State
   const [cropBox, setCropBox] = useState(null);
@@ -86,7 +98,7 @@ export default function CanvasViewport({
     }
   }, [activeTool, canvasWidth, canvasHeight]);
 
-  // Spacebar hotkey listener for temporary Hand tool pan
+  // Spacebar hotkey listener for Hand pan
   useEffect(() => {
     const handleKeyDown = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
@@ -123,7 +135,6 @@ export default function CanvasViewport({
         return Math.max(10, Math.min(500, nextZoom));
       });
     } else if (e.shiftKey) {
-      // Horizontal pan with shift+wheel
       setPan((prev) => ({ ...prev, x: prev.x - e.deltaY }));
     }
   };
@@ -149,6 +160,44 @@ export default function CanvasViewport({
     };
   }, [getActiveCanvas]);
 
+  // Apply marquee clipping path to active canvas context
+  const applyMarqueeClip = useCallback((ctx) => {
+    if (!marqueeSelection || marqueeSelection.width === 0 || marqueeSelection.height === 0) return;
+
+    ctx.save();
+    ctx.beginPath();
+
+    const rx = Math.min(marqueeSelection.x, marqueeSelection.x + marqueeSelection.width);
+    const ry = Math.min(marqueeSelection.y, marqueeSelection.y + marqueeSelection.height);
+    const rw = Math.abs(marqueeSelection.width);
+    const rh = Math.abs(marqueeSelection.height);
+
+    if (marqueeSelection.type === 'rect') {
+      if (marqueeSelection.inverted) {
+        ctx.rect(0, 0, canvasWidth, canvasHeight);
+        ctx.rect(rx, ry, rw, rh);
+        ctx.clip('evenodd');
+      } else {
+        ctx.rect(rx, ry, rw, rh);
+        ctx.clip();
+      }
+    } else {
+      const cx = rx + rw / 2;
+      const cy = ry + rh / 2;
+      const radX = Math.max(0.1, rw / 2);
+      const radY = Math.max(0.1, rh / 2);
+
+      if (marqueeSelection.inverted) {
+        ctx.rect(0, 0, canvasWidth, canvasHeight);
+        ctx.ellipse(cx, cy, radX, radY, 0, 0, Math.PI * 2);
+        ctx.clip('evenodd');
+      } else {
+        ctx.ellipse(cx, cy, radX, radY, 0, 0, Math.PI * 2);
+        ctx.clip();
+      }
+    }
+  }, [marqueeSelection, canvasWidth, canvasHeight]);
+
   // Initialize Move & Free Transform on active layer
   const startTransform = useCallback(() => {
     const activeCanvas = getActiveCanvas();
@@ -157,7 +206,6 @@ export default function CanvasViewport({
     const bounds = getLayerContentBounds(activeCanvas);
     if (!bounds) return;
 
-    // Snapshot content in bounds into an offscreen canvas
     const offscreen = document.createElement('canvas');
     offscreen.width = Math.max(1, bounds.width);
     offscreen.height = Math.max(1, bounds.height);
@@ -175,7 +223,6 @@ export default function CanvasViewport({
       bounds.height
     );
 
-    // Clear content from active canvas temporarily
     const ctx = activeCanvas.getContext('2d');
     const isBackground = layers.find((l) => l.id === activeLayerId)?.isBackground;
     if (isBackground) {
@@ -197,7 +244,6 @@ export default function CanvasViewport({
     if (activeTool === 'select' && !transformState) {
       startTransform();
     } else if (activeTool !== 'select' && transformState) {
-      // Commit pending transform if tool changes
       commitTransform();
     }
   }, [activeTool]);
@@ -216,13 +262,13 @@ export default function CanvasViewport({
         transformState.box.width,
         transformState.box.height
       );
-      pushSnapshot();
+      pushSnapshot({}, 'Free Transform', 'transform');
     }
 
     setTransformState(null);
   }, [transformState, getActiveCanvas, pushSnapshot]);
 
-  // Cancel Free Transform (restores original pixels)
+  // Cancel Free Transform
   const cancelTransform = useCallback(() => {
     if (!transformState) return;
 
@@ -255,6 +301,8 @@ export default function CanvasViewport({
     }
 
     ctx.save();
+    applyMarqueeClip(ctx);
+
     ctx.lineWidth = brushSize;
     ctx.strokeStyle = brushColor;
     ctx.fillStyle = shapeFillEnabled ? shapeFillColor : 'transparent';
@@ -284,8 +332,10 @@ export default function CanvasViewport({
       }
       ctx.stroke();
     }
+
+    if (marqueeSelection) ctx.restore();
     ctx.restore();
-  }, [activeTool, brushColor, brushSize, shapeFillEnabled, shapeFillColor]);
+  }, [activeTool, brushColor, brushSize, shapeFillEnabled, shapeFillColor, applyMarqueeClip, marqueeSelection]);
 
   // Pointer Down handler
   const handlePointerDown = (e) => {
@@ -306,6 +356,24 @@ export default function CanvasViewport({
 
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
+
+    // Marquee Selection Tool Start
+    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse') {
+      isDrawingMarqueeRef.current = true;
+      marqueeStartRef.current = coords;
+      setMarqueeSelection({
+        type: activeTool === 'marquee-ellipse' ? 'ellipse' : 'rect',
+        x: coords.x,
+        y: coords.y,
+        width: 1,
+        height: 1,
+        inverted: false
+      });
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
 
     // Text Tool
     if (activeTool === 'text') {
@@ -338,13 +406,19 @@ export default function CanvasViewport({
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
       const ctx = activeCanvas.getContext('2d');
+
+      ctx.save();
+      applyMarqueeClip(ctx);
       ctx.fillStyle = brushColor;
       ctx.fillRect(0, 0, activeCanvas.width, activeCanvas.height);
-      pushSnapshot();
+      if (marqueeSelection) ctx.restore();
+      ctx.restore();
+
+      pushSnapshot({}, 'Paint Bucket Fill', 'bucket');
       return;
     }
 
-    // Freehand Brush & Eraser
+    // Freehand Brush & Eraser (with marquee clipping)
     if (activeTool === 'brush' || activeTool === 'eraser') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -355,6 +429,8 @@ export default function CanvasViewport({
 
       const ctx = activeCanvas.getContext('2d');
       ctx.save();
+      applyMarqueeClip(ctx);
+
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.lineWidth = brushSize;
@@ -384,7 +460,6 @@ export default function CanvasViewport({
 
   // Pointer Move handler
   const handlePointerMove = (e) => {
-    // Panning execution
     if (isPanningRef.current) {
       setPan({
         x: e.clientX - panStartRef.current.x,
@@ -396,6 +471,30 @@ export default function CanvasViewport({
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
     setCursorPos({ x: coords.x, y: coords.y, inside: true });
+
+    // Marquee Dragging with Shift 1:1 Aspect Ratio constraint
+    if (isDrawingMarqueeRef.current) {
+      const start = marqueeStartRef.current;
+      const dx = coords.x - start.x;
+      const dy = coords.y - start.y;
+      let w = dx;
+      let h = dy;
+
+      if (e.shiftKey) {
+        const size = Math.max(Math.abs(dx), Math.abs(dy));
+        w = dx < 0 ? -size : size;
+        h = dy < 0 ? -size : size;
+      }
+
+      setMarqueeSelection((prev) => ({
+        ...prev,
+        x: w < 0 ? start.x + w : start.x,
+        y: h < 0 ? start.y + h : start.y,
+        width: Math.abs(w),
+        height: Math.abs(h)
+      }));
+      return;
+    }
 
     // Live Shape Preview
     if (isDrawingShapeRef.current && previewCanvasRef.current) {
@@ -451,6 +550,15 @@ export default function CanvasViewport({
       return;
     }
 
+    // Finish Marquee Drag
+    if (isDrawingMarqueeRef.current) {
+      isDrawingMarqueeRef.current = false;
+      if (marqueeSelection && (marqueeSelection.width < 5 || marqueeSelection.height < 5)) {
+        setMarqueeSelection(null);
+      }
+      return;
+    }
+
     // Commit Shape
     if (isDrawingShapeRef.current) {
       const coords = getCanvasCoords(e);
@@ -471,7 +579,8 @@ export default function CanvasViewport({
           coords.y,
           e.shiftKey
         );
-        pushSnapshot();
+        const actionLabel = activeTool === 'circle' ? 'Circle Shape' : 'Rectangle Shape';
+        pushSnapshot({}, actionLabel, activeTool === 'circle' ? 'circle' : 'rectangle');
       }
 
       isDrawingShapeRef.current = false;
@@ -497,8 +606,11 @@ export default function CanvasViewport({
           ctx.stroke();
         }
 
+        if (marqueeSelection) ctx.restore();
         ctx.restore();
-        pushSnapshot();
+
+        const actionLabel = activeTool === 'eraser' ? 'Eraser Stroke' : 'Brush Stroke';
+        pushSnapshot({}, actionLabel, activeTool === 'eraser' ? 'eraser' : 'brush');
       }
 
       isDrawingRef.current = false;
@@ -513,6 +625,8 @@ export default function CanvasViewport({
     const ctx = activeCanvas.getContext('2d');
 
     ctx.save();
+    applyMarqueeClip(ctx);
+
     const stylePrefix = textData.isItalic ? 'italic ' : '';
     const weightPrefix = textData.isBold ? 'bold ' : '';
     ctx.font = `${stylePrefix}${weightPrefix}${textData.fontSize}px ${textData.fontFamily}`;
@@ -526,8 +640,10 @@ export default function CanvasViewport({
       ctx.fillText(line, textData.x, textData.y + index * lineHeight);
     });
 
+    if (marqueeSelection) ctx.restore();
     ctx.restore();
-    pushSnapshot();
+
+    pushSnapshot({}, 'Text Stamp', 'text');
     setTextConfig(null);
   };
 
@@ -537,6 +653,9 @@ export default function CanvasViewport({
       return isPanningRef.current ? 'cursor-grabbing' : 'cursor-grab';
     }
     switch (activeTool) {
+      case 'marquee-rect':
+      case 'marquee-ellipse':
+        return 'cursor-crosshair';
       case 'text':
         return 'cursor-text';
       case 'brush':
@@ -564,6 +683,20 @@ export default function CanvasViewport({
       onWheel={handleWheel}
       className="flex-1 bg-[#090a0f] relative overflow-hidden flex items-center justify-center p-8 select-none"
     >
+      {/* Pixel Rulers (Framing Top & Left Viewport) */}
+      <PixelRulers
+        viewportRef={containerRef}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+        zoom={zoom}
+        pan={pan}
+        cursorPos={cursorPos}
+        showRulers={showRulers}
+        showGuides={showGuides}
+        guides={guides}
+        setGuides={setGuides}
+      />
+
       {/* Canvas Viewport Container with Smooth Zoom & Pan Transforms */}
       <div
         className="relative shadow-2xl shadow-black/90 rounded border border-zinc-800 bg-[#1e2029] overflow-hidden transition-transform duration-75 origin-center"
@@ -614,6 +747,13 @@ export default function CanvasViewport({
             filter: filterString !== 'none' ? filterString : undefined
           }}
           className="absolute inset-0 block pointer-events-none z-30"
+        />
+
+        {/* Animated Marching Ants Selection Overlay */}
+        <MarchingAntsOverlay
+          selection={marqueeSelection}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
         />
 
         {/* Move & Free Transform Interactive Bounding Box */}
@@ -685,6 +825,14 @@ export default function CanvasViewport({
             <span>|</span>
             <span className="font-mono text-[11px] text-zinc-300">
               X: {cursorPos.x}, Y: {cursorPos.y}
+            </span>
+          </>
+        )}
+        {marqueeSelection && (
+          <>
+            <span>|</span>
+            <span className="text-[10px] text-indigo-400 font-medium">
+              Selection Active
             </span>
           </>
         )}

@@ -6,6 +6,7 @@ import CanvasViewport from './components/CanvasViewport';
 import RightSidebar from './components/RightSidebar';
 import ImportImageModal from './components/ImportImageModal';
 import ExportModal from './components/ExportModal';
+import ColorPickerModal from './components/ColorPickerModal';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
 import {
@@ -23,6 +24,22 @@ export default function App() {
   const [zoom, setZoom] = useState(100);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
+  // Rulers & Alignment Guides (Phase 5B)
+  const [showRulers, setShowRulers] = useState(true);
+  const [showGuides, setShowGuides] = useState(true);
+  const [guides, setGuides] = useState([
+    { id: 'g_default_1', type: 'horizontal', pos: 250 },
+    { id: 'g_default_2', type: 'vertical', pos: 400 }
+  ]);
+
+  // Marquee Selection State (Phase 5B)
+  const [marqueeSelection, setMarqueeSelection] = useState(null);
+
+  // Authentic Dual Color Swatches (Phase 5B)
+  const [foregroundColor, setForegroundColor] = useState('#6366f1');
+  const [backgroundColor, setBackgroundColor] = useState('#ffffff');
+  const [colorPickerTarget, setColorPickerTarget] = useState(null); // 'foreground' | 'background' | null
+
   // Multi-Layer Architecture State
   const [layers, setLayers] = useState([createInitialBackgroundLayer()]);
   const [activeLayerId, setActiveLayerId] = useState('layer_background');
@@ -31,7 +48,6 @@ export default function App() {
   // Studio & Tool State
   const [activeTool, setActiveTool] = useState('brush');
   const [activeTab, setActiveTab] = useState('layers');
-  const [brushColor, setBrushColor] = useState('#6366f1');
   const [brushSize, setBrushSize] = useState(8);
   const [shapeFillEnabled, setShapeFillEnabled] = useState(false);
   const [shapeFillColor, setShapeFillColor] = useState('#6366f1');
@@ -49,7 +65,6 @@ export default function App() {
 
   // Fit Canvas to Screen
   const handleFitToScreen = useCallback(() => {
-    // Standard viewport dimensions (viewport window ~1000x650)
     const availableW = window.innerWidth - 380;
     const availableH = window.innerHeight - 140;
 
@@ -61,7 +76,7 @@ export default function App() {
     setPan({ x: 0, y: 0 });
   }, [canvasWidth, canvasHeight]);
 
-  // History State Engine (Multi-Layer Snapshot Buffers)
+  // History State Engine (Multi-Layer Snapshot Buffers + Visual Action Log)
   const handleRestoreSnapshot = useCallback((snapshot) => {
     setLayers(snapshot.layers);
     setActiveLayerId(snapshot.activeLayerId);
@@ -75,7 +90,10 @@ export default function App() {
     pushSnapshot,
     initHistory,
     undo,
-    redo
+    redo,
+    jumpToIndex,
+    historyList,
+    currentIndex
   } = useCanvasHistory({
     layers,
     activeLayerId,
@@ -85,6 +103,28 @@ export default function App() {
     onRestoreSnapshot: handleRestoreSnapshot
   });
 
+  // Color Swatch Operations (D = Default, X = Swap)
+  const handleSwapColors = useCallback(() => {
+    setForegroundColor((fg) => {
+      setBackgroundColor(fg);
+      return backgroundColor;
+    });
+  }, [backgroundColor]);
+
+  const handleResetDefaultColors = useCallback(() => {
+    setForegroundColor('#000000');
+    setBackgroundColor('#ffffff');
+  }, []);
+
+  // Marquee Invert
+  const handleInvertMarquee = useCallback(() => {
+    if (!marqueeSelection) return;
+    setMarqueeSelection((prev) => ({
+      ...prev,
+      inverted: !prev.inverted
+    }));
+  }, [marqueeSelection]);
+
   // Execute Canvas Crop across all layers
   const handleCommitCrop = useCallback((cropBox) => {
     if (!cropBox || cropBox.width < 10 || cropBox.height < 10) return;
@@ -92,7 +132,6 @@ export default function App() {
     const newW = Math.round(cropBox.width);
     const newH = Math.round(cropBox.height);
 
-    // Pre-crop all existing layer canvases into offscreen buffers
     const croppedBuffers = {};
     layers.forEach((layer) => {
       const srcCanvas = layerCanvasesRef.current[layer.id];
@@ -101,13 +140,12 @@ export default function App() {
       }
     });
 
-    // Update canvas size
     setCanvasWidth(newW);
     setCanvasHeight(newH);
     setPan({ x: 0, y: 0 });
     setActiveTool('select');
+    setMarqueeSelection(null);
 
-    // Draw back cropped buffers once DOM canvas elements resize
     setTimeout(() => {
       layers.forEach((layer) => {
         const destCanvas = layerCanvasesRef.current[layer.id];
@@ -119,10 +157,11 @@ export default function App() {
         }
       });
 
-      pushSnapshot({
-        canvasWidth: newW,
-        canvasHeight: newH
-      });
+      pushSnapshot(
+        { canvasWidth: newW, canvasHeight: newH },
+        'Crop Canvas',
+        'crop'
+      );
     }, 40);
   }, [layers, pushSnapshot]);
 
@@ -139,7 +178,11 @@ export default function App() {
     setActiveLayerId(newLayer.id);
 
     setTimeout(() => {
-      pushSnapshot({ layers: newLayers, activeLayerId: newLayer.id });
+      pushSnapshot(
+        { layers: newLayers, activeLayerId: newLayer.id },
+        'New Layer',
+        'layer'
+      );
     }, 30);
   }, [layers, activeLayerId, pushSnapshot]);
 
@@ -157,7 +200,11 @@ export default function App() {
     setLayers(newLayers);
     setActiveLayerId(newActiveId);
 
-    pushSnapshot({ layers: newLayers, activeLayerId: newActiveId });
+    pushSnapshot(
+      { layers: newLayers, activeLayerId: newActiveId },
+      'Delete Layer',
+      'layer'
+    );
   }, [layers, activeLayerId, pushSnapshot]);
 
   // Layer Operations: Duplicate Active Layer
@@ -182,7 +229,11 @@ export default function App() {
         const ctx = targetCanvas.getContext('2d');
         ctx.drawImage(sourceCanvas, 0, 0);
       }
-      pushSnapshot({ layers: newLayers, activeLayerId: duplicateLayer.id });
+      pushSnapshot(
+        { layers: newLayers, activeLayerId: duplicateLayer.id },
+        'Duplicate Layer',
+        'layer'
+      );
     }, 40);
   }, [layers, activeLayerId, pushSnapshot]);
 
@@ -195,7 +246,7 @@ export default function App() {
     newLayers[actualIndex + 1] = temp;
 
     setLayers(newLayers);
-    pushSnapshot({ layers: newLayers });
+    pushSnapshot({ layers: newLayers }, 'Reorder Layers', 'layer');
   }, [layers, pushSnapshot]);
 
   const handleMoveLayerDown = useCallback((actualIndex) => {
@@ -206,7 +257,7 @@ export default function App() {
     newLayers[actualIndex - 1] = temp;
 
     setLayers(newLayers);
-    pushSnapshot({ layers: newLayers });
+    pushSnapshot({ layers: newLayers }, 'Reorder Layers', 'layer');
   }, [layers, pushSnapshot]);
 
   // Layer Operations: Visibility Toggle
@@ -215,7 +266,7 @@ export default function App() {
       const updated = prev.map((l) =>
         l.id === layerId ? { ...l, visible: !l.visible } : l
       );
-      pushSnapshot({ layers: updated });
+      pushSnapshot({ layers: updated }, 'Toggle Visibility', 'layer');
       return updated;
     });
   }, [pushSnapshot]);
@@ -233,7 +284,7 @@ export default function App() {
       const updated = prev.map((l) =>
         l.id === layerId ? { ...l, blendMode } : l
       );
-      pushSnapshot({ layers: updated });
+      pushSnapshot({ layers: updated }, 'Change Blend Mode', 'layer');
       return updated;
     });
   }, [pushSnapshot]);
@@ -252,7 +303,7 @@ export default function App() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    pushSnapshot();
+    pushSnapshot({}, 'Clear Layer', 'eraser');
   }, [activeLayerId, layers, pushSnapshot]);
 
   // Fill Active Layer
@@ -262,7 +313,7 @@ export default function App() {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    pushSnapshot();
+    pushSnapshot({}, 'Fill Layer', 'bucket');
   }, [activeLayerId, pushSnapshot]);
 
   // Image Import: Open Modal
@@ -297,7 +348,11 @@ export default function App() {
 
         ctx.drawImage(img, x, y, w, h);
       }
-      pushSnapshot({ layers: newLayers, activeLayerId: newLayer.id });
+      pushSnapshot(
+        { layers: newLayers, activeLayerId: newLayer.id },
+        'Import Image Layer',
+        'image'
+      );
       setPendingImageMeta(null);
     }, 50);
   }, [pendingImageMeta, layers, canvasWidth, canvasHeight, pushSnapshot]);
@@ -327,17 +382,21 @@ export default function App() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(pendingImageMeta.imgElement, 0, 0, newW, newH);
       }
-      pushSnapshot({
-        layers: newLayers,
-        activeLayerId: bgLayer.id,
-        canvasWidth: newW,
-        canvasHeight: newH
-      });
+      pushSnapshot(
+        {
+          layers: newLayers,
+          activeLayerId: bgLayer.id,
+          canvasWidth: newW,
+          canvasHeight: newH
+        },
+        'Open Image Project',
+        'image'
+      );
       setPendingImageMeta(null);
     }, 50);
   }, [pendingImageMeta, handleFitToScreen, pushSnapshot]);
 
-  // Phase 3: Apply Adjustments to Active Layer
+  // Apply Adjustments to Active Layer
   const handleApplyAdjustments = useCallback(() => {
     const canvas = layerCanvasesRef.current[activeLayerId];
     if (!canvas) return;
@@ -360,21 +419,52 @@ export default function App() {
     ctx.restore();
 
     setAdjustments(DEFAULT_ADJUSTMENTS);
-    pushSnapshot();
+    pushSnapshot({}, 'Bake Adjustments', 'filter');
   }, [activeLayerId, adjustments, pushSnapshot]);
 
   const handleResetAdjustments = useCallback(() => {
     setAdjustments(DEFAULT_ADJUSTMENTS);
   }, []);
 
-  // Keyboard shortcuts for tools
+  // Global Keyboard Shortcuts (Ctrl+R = Rulers, Ctrl+; = Guides, Ctrl+D = Deselect, D = Default Colors, X = Swap)
   useEffect(() => {
-    const handleToolShortcuts = (e) => {
+    const handleGlobalShortcuts = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+      // Ctrl shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key.toLowerCase() === 'r') {
+          e.preventDefault();
+          setShowRulers((prev) => !prev);
+        } else if (e.key === ';' || e.code === 'Semicolon') {
+          e.preventDefault();
+          setShowGuides((prev) => !prev);
+        } else if (e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          setMarqueeSelection(null);
+        } else if (e.shiftKey && e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          handleInvertMarquee();
+        }
+        return;
+      }
+
+      if (e.altKey) return;
+
+      // Single-key shortcuts
       switch (e.key.toLowerCase()) {
+        case 'd':
+          handleResetDefaultColors();
+          break;
+        case 'x':
+          handleSwapColors();
+          break;
+        case 'm':
+          setActiveTool((prev) =>
+            prev === 'marquee-rect' ? 'marquee-ellipse' : 'marquee-rect'
+          );
+          break;
         case 'v':
           setActiveTool('select');
           break;
@@ -391,7 +481,6 @@ export default function App() {
           setActiveTool('eraser');
           break;
         case 'u':
-        case 'r':
           setActiveTool('rectangle');
           break;
         case 'o':
@@ -408,9 +497,9 @@ export default function App() {
       }
     };
 
-    window.addEventListener('keydown', handleToolShortcuts);
-    return () => window.removeEventListener('keydown', handleToolShortcuts);
-  }, []);
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [handleInvertMarquee, handleResetDefaultColors, handleSwapColors]);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0f1117] text-zinc-200 select-none overflow-hidden font-sans">
@@ -434,8 +523,9 @@ export default function App() {
       {/* Contextual Tool Options Bar */}
       <ToolOptionsBar
         activeTool={activeTool}
-        brushColor={brushColor}
-        setBrushColor={setBrushColor}
+        setActiveTool={setActiveTool}
+        brushColor={foregroundColor}
+        setBrushColor={setForegroundColor}
         brushSize={brushSize}
         setBrushSize={setBrushSize}
         shapeFillEnabled={shapeFillEnabled}
@@ -443,24 +533,34 @@ export default function App() {
         shapeFillColor={shapeFillColor}
         setShapeFillColor={setShapeFillColor}
         onFitToScreen={handleFitToScreen}
+        marqueeSelection={marqueeSelection}
+        onDeselectMarquee={() => setMarqueeSelection(null)}
+        onInvertMarquee={handleInvertMarquee}
+        showRulers={showRulers}
+        onToggleRulers={() => setShowRulers((r) => !r)}
+        showGuides={showGuides}
+        onToggleGuides={() => setShowGuides((g) => !g)}
       />
 
       {/* Main Studio Workspace */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Toolbar */}
+        {/* Left Toolbar with Authentic Dual Color Swatch */}
         <Toolbar
           activeTool={activeTool}
           setActiveTool={setActiveTool}
-          brushColor={brushColor}
-          setBrushColor={setBrushColor}
+          foregroundColor={foregroundColor}
+          backgroundColor={backgroundColor}
+          onSwapColors={handleSwapColors}
+          onResetDefaultColors={handleResetDefaultColors}
+          onOpenColorPicker={(target) => setColorPickerTarget(target)}
           brushSize={brushSize}
         />
 
-        {/* Center Multi-Layer Canvas Viewport with Pan, Zoom, Transform & Crop */}
+        {/* Center Multi-Layer Canvas Viewport with Rulers, Guides & Marquee */}
         <CanvasViewport
           activeTool={activeTool}
           setActiveTool={setActiveTool}
-          brushColor={brushColor}
+          brushColor={foregroundColor}
           brushSize={brushSize}
           shapeFillEnabled={shapeFillEnabled}
           shapeFillColor={shapeFillColor}
@@ -478,17 +578,24 @@ export default function App() {
           onCommitCrop={handleCommitCrop}
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
+          // Phase 5B props
+          showRulers={showRulers}
+          showGuides={showGuides}
+          guides={guides}
+          setGuides={setGuides}
+          marqueeSelection={marqueeSelection}
+          setMarqueeSelection={setMarqueeSelection}
         />
 
-        {/* Right Sidebar (Layers, Adjustments & Properties) */}
+        {/* Right Sidebar (Layers, History, Adjustments & Properties) */}
         <RightSidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           activeTool={activeTool}
           brushSize={brushSize}
           setBrushSize={setBrushSize}
-          brushColor={brushColor}
-          setBrushColor={setBrushColor}
+          brushColor={foregroundColor}
+          setBrushColor={setForegroundColor}
           shapeFillEnabled={shapeFillEnabled}
           setShapeFillEnabled={setShapeFillEnabled}
           shapeFillColor={shapeFillColor}
@@ -511,13 +618,31 @@ export default function App() {
           onToggleVisibility={handleToggleVisibility}
           onChangeOpacity={handleChangeOpacity}
           onChangeBlendMode={handleChangeBlendMode}
-          // History props
+          // Visual History Panel props
+          historyList={historyList}
+          currentIndex={currentIndex}
+          onJumpToIndex={jumpToIndex}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
         />
       </div>
+
+      {/* Photoshop Color Picker Modal */}
+      <ColorPickerModal
+        isOpen={colorPickerTarget !== null}
+        onClose={() => setColorPickerTarget(null)}
+        initialColor={colorPickerTarget === 'background' ? backgroundColor : foregroundColor}
+        title={`Color Picker (${colorPickerTarget === 'background' ? 'Background Color' : 'Foreground Color'})`}
+        onSelectColor={(chosenColor) => {
+          if (colorPickerTarget === 'background') {
+            setBackgroundColor(chosenColor);
+          } else {
+            setForegroundColor(chosenColor);
+          }
+        }}
+      />
 
       {/* Local Image Import Modal */}
       <ImportImageModal

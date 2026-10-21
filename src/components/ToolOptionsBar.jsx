@@ -13,6 +13,7 @@ const PRESET_COLORS = [
 
 export default function ToolOptionsBar({
   activeTool,
+  setActiveTool,
   brushColor,
   setBrushColor,
   brushSize,
@@ -21,7 +22,14 @@ export default function ToolOptionsBar({
   setShapeFillEnabled,
   shapeFillColor,
   setShapeFillColor,
-  onFitToScreen
+  onFitToScreen,
+  marqueeSelection,
+  onDeselectMarquee,
+  onInvertMarquee,
+  showRulers,
+  onToggleRulers,
+  showGuides,
+  onToggleGuides
 }) {
   return (
     <div className="h-10 bg-[#161820] border-b border-zinc-800/90 px-4 flex items-center justify-between text-xs text-zinc-300 z-10 select-none">
@@ -29,16 +37,79 @@ export default function ToolOptionsBar({
         {/* Tool Badge */}
         <div className="flex items-center gap-1.5 font-medium text-zinc-200">
           <span className="text-[11px] uppercase tracking-wider text-indigo-400 font-semibold">Tool:</span>
-          <span className="capitalize">{activeTool}</span>
+          <span className="capitalize">{activeTool.replace('marquee-', '')}</span>
         </div>
 
         <div className="w-[1px] h-4 bg-zinc-800" />
+
+        {/* Marquee Selection Tool Options */}
+        {(activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse') && (
+          <div className="flex items-center gap-3 text-zinc-300 text-[11px]">
+            {/* Shape Sub-tool Selector */}
+            <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTool('marquee-rect')}
+                className={`px-2 py-0.5 rounded transition ${
+                  activeTool === 'marquee-rect'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                Rectangle
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTool('marquee-ellipse')}
+                className={`px-2 py-0.5 rounded transition ${
+                  activeTool === 'marquee-ellipse'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                Ellipse
+              </button>
+            </div>
+
+            <div className="w-[1px] h-4 bg-zinc-800" />
+
+            <button
+              onClick={onDeselectMarquee}
+              disabled={!marqueeSelection}
+              className={`px-2 py-1 rounded border text-[11px] transition ${
+                marqueeSelection
+                  ? 'border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 cursor-pointer'
+                  : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
+              }`}
+              title="Deselect Marquee (Ctrl+D)"
+            >
+              Deselect (Ctrl+D)
+            </button>
+
+            <button
+              onClick={onInvertMarquee}
+              disabled={!marqueeSelection}
+              className={`px-2 py-1 rounded border text-[11px] transition ${
+                marqueeSelection
+                  ? 'border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 cursor-pointer'
+                  : 'border-zinc-800 text-zinc-600 cursor-not-allowed'
+              }`}
+              title="Invert Selection (Ctrl+Shift+I)"
+            >
+              Invert (Ctrl+Shift+I)
+            </button>
+
+            <span className="text-[10px] text-indigo-400">
+              {marqueeSelection ? 'Active Marching Ants' : 'Drag to select area'}
+            </span>
+          </div>
+        )}
 
         {/* Move & Free Transform Tool Options */}
         {activeTool === 'select' && (
           <div className="flex items-center gap-3 text-zinc-300 text-[11px]">
             <span>
-              Drag bounding box to move active layer content. Use 8 handles to scale (Hold Shift to lock ratio).
+              Drag bounding box to move active layer content. Use 8 handles to scale (Shift locks ratio).
             </span>
             <div className="w-[1px] h-4 bg-zinc-800" />
             <span className="text-indigo-400 font-medium">Enter to Apply • Esc to Cancel</span>
@@ -255,8 +326,26 @@ export default function ToolOptionsBar({
         )}
       </div>
 
-      <div className="text-[11px] text-zinc-400 hidden sm:flex items-center gap-2">
-        <span className="text-zinc-500">Hold Spacebar to pan</span>
+      {/* Right Quick Toggles: Rulers & Guides */}
+      <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+        <button
+          onClick={onToggleRulers}
+          className={`px-1.5 py-0.5 rounded transition ${
+            showRulers ? 'text-indigo-400 bg-zinc-800 font-medium' : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+          title="Toggle Pixel Rulers (Ctrl+R)"
+        >
+          Rulers
+        </button>
+        <button
+          onClick={onToggleGuides}
+          className={`px-1.5 py-0.5 rounded transition ${
+            showGuides ? 'text-cyan-400 bg-zinc-800 font-medium' : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+          title="Toggle Guides (Ctrl+;)"
+        >
+          Guides
+        </button>
       </div>
     </div>
   );

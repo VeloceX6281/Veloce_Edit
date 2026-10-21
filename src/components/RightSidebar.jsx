@@ -1,6 +1,7 @@
 import React from 'react';
 import AdjustmentsPanel from './AdjustmentsPanel';
 import LayersPanel from './LayersPanel';
+import HistoryPanel from './HistoryPanel';
 
 const PALETTE = [
   '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
@@ -27,7 +28,7 @@ export default function RightSidebar({
   onResetAdjustments,
   onClearCanvas,
   onFillCanvas,
-  // Layer Stack Props
+  // Multi-Layer props
   layers,
   activeLayerId,
   onSelectLayer,
@@ -40,7 +41,10 @@ export default function RightSidebar({
   onChangeOpacity,
   onChangeBlendMode,
   onChangeLayerName,
-  // History Props
+  // Visual History props
+  historyList,
+  currentIndex,
+  onJumpToIndex,
   canUndo,
   canRedo,
   onUndo,
@@ -48,7 +52,7 @@ export default function RightSidebar({
 }) {
   return (
     <aside className="w-72 bg-[#14161d] border-l border-zinc-800 flex flex-col z-10 select-none">
-      {/* Top Tab Bar: Layers, Adjustments, Properties */}
+      {/* Top Tab Bar: Layers, History, Adjustments, Properties */}
       <div className="h-10 border-b border-zinc-800 flex text-xs">
         <button
           onClick={() => setActiveTab('layers')}
@@ -63,6 +67,17 @@ export default function RightSidebar({
         </button>
 
         <button
+          onClick={() => setActiveTab('history')}
+          className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
+            activeTab === 'history'
+              ? 'border-indigo-500 text-zinc-100 bg-[#181a22]'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <span>History</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('adjustments')}
           className={`flex-1 font-medium border-b-2 transition flex items-center justify-center gap-1 ${
             activeTab === 'adjustments'
@@ -70,7 +85,7 @@ export default function RightSidebar({
               : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <span>Adjustments</span>
+          <span>Filters</span>
         </button>
 
         <button
@@ -81,7 +96,7 @@ export default function RightSidebar({
               : 'border-transparent text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <span>Properties</span>
+          <span>Props</span>
         </button>
       </div>
 
@@ -108,7 +123,20 @@ export default function RightSidebar({
           />
         )}
 
-        {/* TAB 2: Adjustments & Filter Pipeline */}
+        {/* TAB 2: Visual Action History */}
+        {activeTab === 'history' && (
+          <HistoryPanel
+            historyList={historyList}
+            currentIndex={currentIndex}
+            onJumpToIndex={onJumpToIndex}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={onUndo}
+            onRedo={onRedo}
+          />
+        )}
+
+        {/* TAB 3: Adjustments & Filter Pipeline */}
         {activeTab === 'adjustments' && (
           <AdjustmentsPanel
             adjustments={adjustments}
@@ -118,7 +146,7 @@ export default function RightSidebar({
           />
         )}
 
-        {/* TAB 3: Tool Properties */}
+        {/* TAB 4: Tool Properties */}
         {activeTab === 'properties' && (
           <div className="flex flex-col gap-5 text-xs">
             {/* Tool Specific Sliders */}

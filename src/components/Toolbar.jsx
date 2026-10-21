@@ -1,10 +1,14 @@
 import React from 'react';
+import DualColorSwatch from './DualColorSwatch';
 
 export default function Toolbar({
   activeTool,
   setActiveTool,
-  brushColor,
-  setBrushColor,
+  foregroundColor,
+  backgroundColor,
+  onSwapColors,
+  onResetDefaultColors,
+  onOpenColorPicker,
   brushSize
 }) {
   const tools = [
@@ -15,6 +19,14 @@ export default function Toolbar({
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 4l7 17 2.5-6.5L20 12 4 4z" />
       ),
       shortcut: 'V'
+    },
+    {
+      id: 'marquee-rect',
+      name: 'Marquee Selection Tool (Marching Ants)',
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 2" d="M4 5h16v14H4V5z" />
+      ),
+      shortcut: 'M'
     },
     {
       id: 'crop',
@@ -83,9 +95,13 @@ export default function Toolbar({
   ];
 
   return (
-    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-3 gap-1.5 z-10 select-none">
+    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-2 gap-1 z-10 select-none">
       {tools.map((tool) => {
-        const isActive = activeTool === tool.id || (tool.id === 'rectangle' && activeTool === 'shapes');
+        const isActive =
+          activeTool === tool.id ||
+          (tool.id === 'marquee-rect' && activeTool === 'marquee-ellipse') ||
+          (tool.id === 'rectangle' && activeTool === 'shapes');
+
         return (
           <button
             key={tool.id}
@@ -111,28 +127,19 @@ export default function Toolbar({
 
       <div className="w-8 h-[1px] bg-zinc-800 my-1" />
 
-      {/* Primary Color Picker Swatch */}
-      <div className="relative group">
-        <input
-          type="color"
-          value={brushColor}
-          onChange={(e) => setBrushColor(e.target.value)}
-          className="w-7 h-7 rounded-full cursor-pointer opacity-0 absolute inset-0 z-10"
-          title="Foreground Color"
-        />
-        <div
-          className="w-7 h-7 rounded-full border-2 border-zinc-600 shadow-md group-hover:scale-105 transition"
-          style={{ backgroundColor: brushColor }}
-        />
-        <span className="absolute left-12 top-0 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-150 z-50 shadow-xl">
-          Color: {brushColor}
-        </span>
-      </div>
+      {/* Authentic Photoshop Dual Color Swatch */}
+      <DualColorSwatch
+        foregroundColor={foregroundColor}
+        backgroundColor={backgroundColor}
+        onSwapColors={onSwapColors}
+        onResetDefaultColors={onResetDefaultColors}
+        onOpenColorPicker={onOpenColorPicker}
+      />
 
       {/* Brush Size Indicator */}
       <div
-        className="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-[10px] text-zinc-300 font-mono"
-        title={`Current Size: ${brushSize}px`}
+        className="w-7 h-6 rounded-md bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-[10px] text-zinc-300 font-mono mt-0.5"
+        title={`Current Brush Size: ${brushSize}px`}
       >
         {brushSize}
       </div>

@@ -1,9 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 
 /**
- * Hook to manage Multi-Layer Canvas Undo / Redo history state stack.
- * Tracks layer structure (addition, deletion, reordering, opacity, blend modes),
- * canvas dimensions, and snapshot pixel buffers (ImageData) for each layer.
+ * Hook to manage Multi-Layer Canvas Undo / Redo history state stack with Visual Action Log.
+ * Tracks layer structure, dimensions, pixel buffers, and human-readable action names.
  */
 export function useCanvasHistory({
   layers,
@@ -17,17 +16,27 @@ export function useCanvasHistory({
   const currentIndexRef = useRef(-1);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const maxHistory = 25;
+  const [historyList, setHistoryList] = useState([]); // Visual list for History Panel
+  const maxHistory = 30;
 
   const updateState = useCallback(() => {
     setCanUndo(currentIndexRef.current > 0);
     setCanRedo(currentIndexRef.current < historyStackRef.current.length - 1);
+    setHistoryList(
+      historyStackRef.current.map((s, idx) => ({
+        id: s.id,
+        action: s.action || 'Canvas Action',
+        icon: s.icon || 'palette',
+        timestamp: s.timestamp,
+        index: idx
+      }))
+    );
   }, []);
 
   /**
    * Captures a complete snapshot of all layers and their pixel buffers
    */
-  const pushSnapshot = useCallback((overrideData = {}) => {
+  const pushSnapshot = useCallback((overrideData = {}, actionName = 'Canvas Action', icon = 'edit') => {
     const currentLayers = overrideData.layers || layers;
     const currentActiveId = overrideData.activeLayerId || activeLayerId;
     const w = overrideData.canvasWidth || canvasWidth;
@@ -49,7 +58,14 @@ export function useCanvasHistory({
       }
     });
 
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
     const snapshot = {
+      id: `state_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      action: actionName,
+      icon,
+      timestamp: timeStr,
       layers: currentLayers.map((l) => ({ ...l })),
       activeLayerId: currentActiveId,
       canvasWidth: w,
@@ -71,7 +87,7 @@ export function useCanvasHistory({
   }, [layers, activeLayerId, canvasWidth, canvasHeight, layerCanvasesRef, updateState]);
 
   /**
-   * Initializes the history stack with the initial blank canvas / layers state
+   * Initializes the history stack with the initial blank canvas state
    */
   const initHistory = useCallback((initialLayers, initialActiveId, w, h) => {
     const targetLayers = initialLayers || layers;
@@ -90,7 +106,14 @@ export function useCanvasHistory({
       }
     });
 
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
     const snapshot = {
+      id: `state_init_${Date.now()}`,
+      action: 'Open Document',
+      icon: 'file',
+      timestamp: timeStr,
       layers: targetLayers.map((l) => ({ ...l })),
       activeLayerId: targetActiveId,
       canvasWidth: targetW,
@@ -113,7 +136,6 @@ export function useCanvasHistory({
       onRestoreSnapshot(snapshot);
     }
 
-    // Restore pixel data for all layers
     setTimeout(() => {
       Object.entries(snapshot.layerPixelData).forEach(([layerId, imageData]) => {
         const canvas = layerCanvasesRef.current[layerId];
@@ -139,6 +161,17 @@ export function useCanvasHistory({
     if (currentIndexRef.current >= historyStackRef.current.length - 1) return;
     currentIndexRef.current += 1;
     const snapshot = historyStackRef.current[currentIndexRef.current];
+    applySnapshotToCanvases(snapshot);
+    updateState();
+  }, [applySnapshotToCanvases, updateState]);
+
+  /**
+   * Jump directly to any previous history state (Photoshop Visual History)
+   */
+  const jumpToIndex = useCallback((targetIndex) => {
+    if (targetIndex < 0 || targetIndex >= historyStackRef.current.length) return;
+    currentIndexRef.current = targetIndex;
+    const snapshot = historyStackRef.current[targetIndex];
     applySnapshotToCanvases(snapshot);
     updateState();
   }, [applySnapshotToCanvases, updateState]);
@@ -177,7 +210,8 @@ export function useCanvasHistory({
     initHistory,
     undo,
     redo,
-    historyCount: historyStackRef.current.length,
+    jumpToIndex,
+    historyList,
     currentIndex: currentIndexRef.current
   };
 }
