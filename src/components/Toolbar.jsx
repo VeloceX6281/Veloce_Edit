@@ -14,110 +14,185 @@ export default function Toolbar({
   const tools = [
     {
       id: 'select',
-      name: 'Move & Transform Tool',
+      name: 'Move / Select Tool',
+      shortcut: 'V',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4l7 17 2.5-6.5L20 12 4 4z" />
-      ),
-      shortcut: 'V'
+        <>
+          <path d="M4 4l6.5 15.5 2.5-6.5 6.5-2.5L4 4z" />
+          <path d="M15 15h6m-3-3v6" />
+        </>
+      )
     },
     {
-      id: 'marquee-rect',
-      name: 'Marquee Selection Tool (Marching Ants)',
+      id: 'marquee',
+      name: 'Marquee Tool',
+      shortcut: 'M',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 2" d="M4 5h16v14H4V5z" />
-      ),
-      shortcut: 'M'
+        <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" strokeDasharray="3 3" />
+      )
+    },
+    {
+      id: 'lasso',
+      name: 'Lasso Tool',
+      shortcut: 'L',
+      icon: (
+        <path d="M7 15c-3-1.5-3.5-5.5-1.5-8C7.5 4.5 13 4 17 6.5s4 6.5 2 9c-2.5 3-7 3.5-10 1.5l-5 5" />
+      )
     },
     {
       id: 'crop',
       name: 'Crop Tool',
+      shortcut: 'C',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 2v14a2 2 0 002 2h14 M2 6h14a2 2 0 012 2v14" />
-      ),
-      shortcut: 'C'
+        <>
+          <path d="M6 2v14a2 2 0 002 2h14" />
+          <path d="M2 6h14a2 2 0 012 2v14" />
+        </>
+      )
     },
     {
-      id: 'hand',
-      name: 'Hand Tool (Pan Viewport)',
+      id: 'eyedropper',
+      name: 'Eyedropper Tool',
+      shortcut: 'I',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
-      ),
-      shortcut: 'H'
+        <>
+          <path d="M19.4 4.6a2 2 0 00-2.8 0l-1.8 1.8 3.8 3.8 1.8-1.8a2 2 0 000-2.8z" />
+          <path d="M13.4 7.8L5 16.2V20h3.8l8.4-8.4-3.8-3.8z" />
+          <path d="M4 20l-1.5 1.5" />
+        </>
+      )
     },
     {
       id: 'brush',
-      name: 'Smooth Brush (Freehand)',
+      name: 'Brush Tool',
+      shortcut: 'B',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 2.625a3.875 3.875 0 00-5.48 0L3.5 12.02v4.48h4.48l9.395-9.395a3.875 3.875 0 000-5.48z" />
-      ),
-      shortcut: 'B'
+        <>
+          <path d="M18.375 2.625a3.875 3.875 0 00-5.48 0L3.5 12.02v4.48h4.48l9.395-9.395a3.875 3.875 0 000-5.48z" />
+          <path d="M15.5 5.5l3 3" />
+          <path d="M9 19.5c1.5.5 3 0 4-1" />
+        </>
+      )
+    },
+    {
+      id: 'clone',
+      name: 'Clone Stamp Tool',
+      shortcut: 'S',
+      icon: (
+        <>
+          <path d="M12 3a2.5 2.5 0 00-2.5 2.5v2.8A5 5 0 006 13v2h12v-2a5 5 0 00-3.5-4.7V5.5A2.5 2.5 0 0012 3z" />
+          <path d="M4 19h16v2H4z" />
+        </>
+      )
     },
     {
       id: 'eraser',
       name: 'Eraser Tool',
+      shortcut: 'E',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11L13 5 4.5 13.5a2.12 2.12 0 000 3L7.5 19.5a2.12 2.12 0 003 0L19 11z" />
-      ),
-      shortcut: 'E'
-    },
-    {
-      id: 'rectangle',
-      name: 'Rectangle Tool',
-      icon: (
-        <rect x="4" y="5" width="16" height="14" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      ),
-      shortcut: 'U'
-    },
-    {
-      id: 'circle',
-      name: 'Circle / Ellipse Tool',
-      icon: (
-        <ellipse cx="12" cy="12" rx="8" ry="7" strokeLinecap="round" strokeLinejoin="round" />
-      ),
-      shortcut: 'O'
-    },
-    {
-      id: 'text',
-      name: 'Text Tool (Click to place)',
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5 4v3h5.5v12h3V7H19V4H5z" />
-      ),
-      shortcut: 'T'
+        <path d="M18 13l-6 6M2 20h20M5 16l8-8 6 6-8 8H5v-6z" />
+      )
     },
     {
       id: 'bucket',
-      name: 'Paint Bucket (Fill)',
+      name: 'Paint Bucket Tool',
+      shortcut: 'G',
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 11l-8-8-8.5 8.5a2.5 2.5 0 000 3.54l3.46 3.46a2.5 2.5 0 003.54 0L17 11.04" />
-      ),
-      shortcut: 'G'
+        <>
+          <path d="M19 11l-8-8-8.5 8.5a2.5 2.5 0 000 3.54l3.46 3.46a2.5 2.5 0 003.54 0L17 11" />
+          <path d="M19 11v5a2 2 0 01-2 2h-1" />
+          <path d="M21 16a2 2 0 11-4 0c0-1.5 2-3 2-3s2 1.5 2 3z" />
+        </>
+      )
+    },
+    {
+      id: 'text',
+      name: 'Horizontal Type Tool',
+      shortcut: 'T',
+      icon: (
+        <>
+          <path d="M4 7V4h16v3" />
+          <path d="M12 4v16" />
+          <path d="M8 20h8" />
+        </>
+      )
+    },
+    {
+      id: 'shapes',
+      name: 'Shape / Rectangle Tool',
+      shortcut: 'U',
+      icon: (
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+      )
+    },
+    {
+      id: 'hand',
+      name: 'Hand Tool',
+      shortcut: 'H',
+      icon: (
+        <path d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+      )
+    },
+    {
+      id: 'zoom',
+      name: 'Zoom Tool',
+      shortcut: 'Z',
+      icon: (
+        <>
+          <path d="M21 21l-4.35-4.35" />
+          <circle cx="10.5" cy="10.5" r="7.5" />
+          <path d="M10.5 7.5v6" />
+          <path d="M7.5 10.5h6" />
+        </>
+      )
     }
   ];
 
+  const handleToolClick = (toolId) => {
+    if (toolId === 'marquee') {
+      setActiveTool(activeTool === 'marquee-ellipse' ? 'marquee-ellipse' : 'marquee-rect');
+    } else if (toolId === 'shapes') {
+      setActiveTool(activeTool === 'circle' ? 'circle' : 'rectangle');
+    } else {
+      setActiveTool(toolId);
+    }
+  };
+
   return (
-    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-2 gap-1 z-10 select-none">
+    <aside className="w-14 bg-[#14161d] border-r border-zinc-800 flex flex-col items-center py-2 gap-1 z-10 select-none overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tools.map((tool) => {
         const isActive =
           activeTool === tool.id ||
-          (tool.id === 'marquee-rect' && activeTool === 'marquee-ellipse') ||
-          (tool.id === 'rectangle' && activeTool === 'shapes');
+          (tool.id === 'marquee' &&
+            (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee')) ||
+          (tool.id === 'shapes' &&
+            (activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'shapes'));
 
         return (
           <button
             key={tool.id}
-            onClick={() => setActiveTool(tool.id)}
+            type="button"
+            onClick={() => handleToolClick(tool.id)}
             title={`${tool.name} (${tool.shortcut})`}
-            className={`w-9 h-9 rounded-lg flex items-center justify-center transition group relative ${
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition group relative shrink-0 ${
               isActive
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
             }`}
           >
-            <svg className="w-4 h-4 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               {tool.icon}
             </svg>
 
-            {/* Custom Tooltip */}
+            {/* Photoshop Style Tooltip */}
             <span className="absolute left-12 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-150 z-50 shadow-xl">
               {tool.name} <span className="text-zinc-400">({tool.shortcut})</span>
             </span>
@@ -125,7 +200,7 @@ export default function Toolbar({
         );
       })}
 
-      <div className="w-8 h-[1px] bg-zinc-800 my-1" />
+      <div className="w-8 h-[1px] bg-zinc-800 my-1 shrink-0" />
 
       {/* Authentic Photoshop Dual Color Swatch */}
       <DualColorSwatch
@@ -138,7 +213,7 @@ export default function Toolbar({
 
       {/* Brush Size Indicator */}
       <div
-        className="w-7 h-6 rounded-md bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-[10px] text-zinc-300 font-mono mt-0.5"
+        className="w-7 h-6 rounded-md bg-zinc-800 border border-zinc-700/80 flex items-center justify-center text-[10px] text-zinc-300 font-mono mt-0.5 shrink-0"
         title={`Current Brush Size: ${brushSize}px`}
       >
         {brushSize}

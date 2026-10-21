@@ -43,7 +43,7 @@ export default function ToolOptionsBar({
         <div className="w-[1px] h-4 bg-zinc-800" />
 
         {/* Marquee Selection Tool Options */}
-        {(activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse') && (
+        {(activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee') && (
           <div className="flex items-center gap-3 text-zinc-300 text-[11px]">
             {/* Shape Sub-tool Selector */}
             <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded p-0.5">
@@ -51,7 +51,7 @@ export default function ToolOptionsBar({
                 type="button"
                 onClick={() => setActiveTool('marquee-rect')}
                 className={`px-2 py-0.5 rounded transition ${
-                  activeTool === 'marquee-rect'
+                  activeTool === 'marquee-rect' || activeTool === 'marquee'
                     ? 'bg-indigo-600 text-white'
                     : 'text-zinc-400 hover:text-white'
                 }`}

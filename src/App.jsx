@@ -468,6 +468,18 @@ export default function App() {
         case 'v':
           setActiveTool('select');
           break;
+        case 'l':
+          setActiveTool('lasso');
+          break;
+        case 'i':
+          setActiveTool('eyedropper');
+          break;
+        case 's':
+          setActiveTool('clone');
+          break;
+        case 'z':
+          setActiveTool('zoom');
+          break;
         case 'c':
           setActiveTool('crop');
           break;

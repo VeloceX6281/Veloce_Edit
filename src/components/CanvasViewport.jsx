@@ -357,8 +357,18 @@ export default function CanvasViewport({
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
 
+    // Zoom Tool Click
+    if (activeTool === 'zoom') {
+      if (e.altKey) {
+        setZoom((z) => Math.max(10, Math.round(z / 1.25)));
+      } else {
+        setZoom((z) => Math.min(500, Math.round(z * 1.25)));
+      }
+      return;
+    }
+
     // Marquee Selection Tool Start
-    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse') {
+    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee') {
       isDrawingMarqueeRef.current = true;
       marqueeStartRef.current = coords;
       setMarqueeSelection({
@@ -653,23 +663,26 @@ export default function CanvasViewport({
       return isPanningRef.current ? 'cursor-grabbing' : 'cursor-grab';
     }
     switch (activeTool) {
+      case 'marquee':
       case 'marquee-rect':
       case 'marquee-ellipse':
-        return 'cursor-crosshair';
-      case 'text':
-        return 'cursor-text';
+      case 'lasso':
+      case 'crop':
       case 'brush':
       case 'eraser':
       case 'rectangle':
       case 'shapes':
       case 'circle':
+      case 'clone':
+      case 'eyedropper':
         return 'cursor-crosshair';
+      case 'text':
+        return 'cursor-text';
       case 'bucket':
         return 'cursor-pointer';
+      case 'zoom':
+        return 'cursor-zoom-in';
       case 'select':
-        return 'cursor-default';
-      case 'crop':
-        return 'cursor-crosshair';
       default:
         return 'cursor-default';
     }
