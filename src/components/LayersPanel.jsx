@@ -16,6 +16,10 @@ export default function LayersPanel({
   onChangeLayerName,
   onToggleClippingMask,
   onMergeDown,
+  onMergeVisible,
+  onToggleLockTransparency,
+  onLayerViaCopy,
+  onLayerViaCut,
   onOpenAdjustments
 }) {
   const [editingLayerId, setEditingLayerId] = useState(null);
@@ -117,11 +121,11 @@ export default function LayersPanel({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setLocks((l) => ({ ...l, transparent: !l.transparent }))}
+              onClick={() => onToggleLockTransparency ? onToggleLockTransparency() : setLocks((l) => ({ ...l, transparent: !l.transparent }))}
               className={`w-4 h-4 flex items-center justify-center rounded-[1px] transition ${
-                locks.transparent ? 'bg-[#1473e6] text-white' : 'hover:bg-[#383838] text-zinc-400'
+                (activeLayer?.locks?.transparent ?? locks.transparent) ? 'bg-[#1473e6] text-white' : 'hover:bg-[#383838] text-zinc-400'
               }`}
-              title="Lock transparent pixels"
+              title="Lock transparent pixels (/)"
             >
               ▨
             </button>
@@ -393,13 +397,37 @@ export default function LayersPanel({
           <button
             type="button"
             onClick={() => {
-              onDuplicateLayer && onDuplicateLayer();
+              onLayerViaCopy && onLayerViaCopy();
               setContextMenu(null);
             }}
             className="w-full px-3 py-1 text-left flex items-center justify-between hover:bg-[#1473e6] hover:text-white"
           >
-            <span>Duplicate Layer...</span>
+            <span>Layer via Copy</span>
             <span className="text-[10px] text-zinc-500 font-mono">Ctrl+J</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onLayerViaCut && onLayerViaCut();
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1 text-left flex items-center justify-between hover:bg-[#1473e6] hover:text-white"
+          >
+            <span>Layer via Cut</span>
+            <span className="text-[10px] text-zinc-500 font-mono">Shift+Ctrl+J</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onToggleLockTransparency && onToggleLockTransparency(contextMenu.layer.id);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1 text-left flex items-center justify-between hover:bg-[#1473e6] hover:text-white"
+          >
+            <span>Lock Transparency</span>
+            <span className="text-[10px] text-zinc-500 font-mono">/</span>
           </button>
 
           <button
@@ -417,6 +445,23 @@ export default function LayersPanel({
           >
             <span>Merge Down</span>
             <span className="text-[10px] text-zinc-500 font-mono">Ctrl+E</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onMergeVisible && onMergeVisible();
+              setContextMenu(null);
+            }}
+            disabled={layers.length <= 1}
+            className={`w-full px-3 py-1 text-left flex items-center justify-between ${
+              layers.length <= 1
+                ? 'text-zinc-600 cursor-not-allowed'
+                : 'hover:bg-[#1473e6] hover:text-white'
+            }`}
+          >
+            <span>Merge Visible</span>
+            <span className="text-[10px] text-zinc-500 font-mono">Shift+Ctrl+E</span>
           </button>
 
           <div className="h-[1px] bg-[#333333] my-1" />

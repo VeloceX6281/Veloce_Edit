@@ -144,3 +144,176 @@ export function getClippingBaseIndex(layers, clippingIndex) {
   }
   return null;
 }
+
+/**
+ * Applies a selection clipping path to a 2D canvas rendering context
+ */
+export function applySelectionPathToContext(ctx, selection, canvasWidth, canvasHeight) {
+  if (!selection || selection.width === 0 || selection.height === 0) return;
+
+  ctx.beginPath();
+
+  if (selection.type === 'path' && selection.pathString) {
+    try {
+      const p2d = new Path2D(selection.pathString);
+      ctx.clip(p2d);
+      return;
+    } catch (e) {
+      // Fallback to bounding rect
+    }
+  }
+
+  const rx = Math.min(selection.x, selection.x + selection.width);
+  const ry = Math.min(selection.y, selection.y + selection.height);
+  const rw = Math.abs(selection.width);
+  const rh = Math.abs(selection.height);
+
+  if (selection.type === 'rect' || selection.type === 'path') {
+    if (selection.inverted) {
+      ctx.rect(0, 0, canvasWidth, canvasHeight);
+      ctx.rect(rx, ry, rw, rh);
+      ctx.clip('evenodd');
+    } else {
+      ctx.rect(rx, ry, rw, rh);
+      ctx.clip();
+    }
+  } else {
+    const cx = rx + rw / 2;
+    const cy = ry + rh / 2;
+    const radX = Math.max(0.1, rw / 2);
+    const radY = Math.max(0.1, rh / 2);
+
+    if (selection.inverted) {
+      ctx.rect(0, 0, canvasWidth, canvasHeight);
+      ctx.ellipse(cx, cy, radX, radY, 0, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+    } else {
+      ctx.ellipse(cx, cy, radX, radY, 0, 0, Math.PI * 2);
+      ctx.clip();
+    }
+  }
+}
+
+/**
+ * Extracts pixels within a selection boundary from a source canvas into a new canvas
+ */
+export function extractSelectionPixels(sourceCanvas, selection, canvasWidth, canvasHeight) {
+  if (!sourceCanvas) return null;
+  const newCanvas = document.createElement('canvas');
+  newCanvas.width = canvasWidth;
+  newCanvas.height = canvasHeight;
+  const ctx = newCanvas.getContext('2d');
+
+  if (selection) {
+    ctx.save();
+    applySelectionPathToContext(ctx, selection, canvasWidth, canvasHeight);
+    ctx.drawImage(sourceCanvas, 0, 0);
+    ctx.restore();
+  } else {
+    ctx.drawImage(sourceCanvas, 0, 0);
+  }
+
+  return newCanvas;
+}
+
+/**
+ * Clears (or fills with background color) pixels inside a selection on a canvas
+ */
+export function clearSelectionPixels(sourceCanvas, selection, canvasWidth, canvasHeight, isBackground = false, bgColor = '#ffffff') {
+  if (!sourceCanvas) return;
+  const ctx = sourceCanvas.getContext('2d');
+  ctx.save();
+  if (selection) {
+    applySelectionPathToContext(ctx, selection, canvasWidth, canvasHeight);
+  }
+
+  if (isBackground) {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  } else {
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Resamples a canvas to new dimensions with high-quality smoothing
+ */
+export function resampleCanvas(sourceCanvas, newWidth, newHeight) {
+  if (!sourceCanvas) return null;
+  const resampled = document.createElement('canvas');
+  resampled.width = newWidth;
+  resampled.height = newHeight;
+  const ctx = resampled.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, 0, 0, newWidth, newHeight);
+  return resampled;
+}
+
+/**
+ * Repositions canvas contents inside expanded/trimmed canvas according to a 3x3 anchor
+ */
+export function anchorCanvas(sourceCanvas, oldW, oldH, newW, newH, anchor = 'C', isBackground = false, bgColor = '#ffffff') {
+  let dx = 0;
+  let dy = 0;
+
+  // Horizontal calculation
+  if (anchor === 'TL' || anchor === 'CL' || anchor === 'BL') {
+    dx = 0;
+  } else if (anchor === 'TC' || anchor === 'C' || anchor === 'BC') {
+    dx = Math.round((newW - oldW) / 2);
+  } else {
+    dx = newW - oldW;
+  }
+
+  // Vertical calculation
+  if (anchor === 'TL' || anchor === 'TC' || anchor === 'TR') {
+    dy = 0;
+  } else if (anchor === 'CL' || anchor === 'C' || anchor === 'CR') {
+    dy = Math.round((newH - oldH) / 2);
+  } else {
+    dy = newH - oldH;
+  }
+
+  const result = document.createElement('canvas');
+  result.width = newW;
+  result.height = newH;
+  const ctx = result.getContext('2d');
+
+  if (isBackground) {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, newW, newH);
+  }
+
+  if (sourceCanvas) {
+    ctx.drawImage(sourceCanvas, dx, dy);
+  }
+
+  return { canvas: result, dx, dy };
+}
+
+/**
+ * Composites all visible layers into a single flattened canvas
+ */
+export function compositeAllVisibleLayers(layers, layerCanvasesRef, width, height) {
+  const comp = document.createElement('canvas');
+  comp.width = width;
+  comp.height = height;
+  const ctx = comp.getContext('2d');
+
+  layers.forEach((l) => {
+    if (!l.visible) return;
+    const lCanvas = layerCanvasesRef.current[l.id];
+    if (lCanvas) {
+      ctx.save();
+      ctx.globalAlpha = l.opacity / 100;
+      ctx.globalCompositeOperation = getCompositeOperation(l.blendMode);
+      ctx.drawImage(lCanvas, 0, 0);
+      ctx.restore();
+    }
+  });
+
+  return comp;
+}

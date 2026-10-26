@@ -453,6 +453,11 @@ export default function CanvasViewport({
     ctx.save();
     applyMarqueeClip(ctx);
 
+    const activeLayerObj = layers.find((l) => l.id === activeLayerId);
+    if (activeLayerObj?.locks?.transparent) {
+      ctx.globalCompositeOperation = 'source-atop';
+    }
+
     ctx.lineWidth = brushSize;
     ctx.strokeStyle = brushColor;
     ctx.fillStyle = shapeFillEnabled ? shapeFillColor : 'transparent';
@@ -485,7 +490,7 @@ export default function CanvasViewport({
 
     if (marqueeSelection) ctx.restore();
     ctx.restore();
-  }, [activeTool, brushColor, brushSize, shapeFillEnabled, shapeFillColor, applyMarqueeClip, marqueeSelection]);
+  }, [activeTool, brushColor, brushSize, shapeFillEnabled, shapeFillColor, applyMarqueeClip, marqueeSelection, layers, activeLayerId]);
 
   // Pointer Down handler
   const handlePointerDown = (e) => {
@@ -683,9 +688,14 @@ export default function CanvasViewport({
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
       const ctx = activeCanvas.getContext('2d');
+      const currentLayerObj = layers.find((l) => l.id === activeLayerId);
+      const isTransparentLocked = currentLayerObj?.locks?.transparent;
 
       ctx.save();
       applyMarqueeClip(ctx);
+      if (isTransparentLocked) {
+        ctx.globalCompositeOperation = 'source-atop';
+      }
       ctx.fillStyle = brushColor;
       ctx.fillRect(0, 0, activeCanvas.width, activeCanvas.height);
       if (marqueeSelection) ctx.restore();
@@ -716,6 +726,7 @@ export default function CanvasViewport({
 
       const currentLayerObj = layers.find((l) => l.id === activeLayerId);
       const isBackground = currentLayerObj?.isBackground;
+      const isTransparentLocked = currentLayerObj?.locks?.transparent;
 
       if (activeTool === 'eraser') {
         if (isBackground) {
@@ -723,12 +734,12 @@ export default function CanvasViewport({
           ctx.fillStyle = '#ffffff';
           ctx.globalCompositeOperation = 'source-over';
         } else {
-          ctx.globalCompositeOperation = 'destination-out';
+          ctx.globalCompositeOperation = isTransparentLocked ? 'source-atop' : 'destination-out';
         }
       } else {
         ctx.strokeStyle = brushColor;
         ctx.fillStyle = brushColor;
-        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalCompositeOperation = isTransparentLocked ? 'source-atop' : 'source-over';
       }
 
       if (e.currentTarget.setPointerCapture) {

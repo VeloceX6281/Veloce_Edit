@@ -7,11 +7,21 @@ import RightSidebar from './components/RightSidebar';
 import ImportImageModal from './components/ImportImageModal';
 import ExportModal from './components/ExportModal';
 import ColorPickerModal from './components/ColorPickerModal';
+import ImageSizeModal from './components/ImageSizeModal';
+import CanvasSizeModal from './components/CanvasSizeModal';
+import FillModal from './components/FillModal';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
 import {
   createInitialBackgroundLayer,
   createNewLayer,
+  cloneCanvas,
+  extractSelectionPixels,
+  clearSelectionPixels,
+  resampleCanvas,
+  anchorCanvas,
+  compositeAllVisibleLayers,
+  applySelectionPathToContext,
   getCompositeOperation
 } from './utils/layerUtils';
 import { cropCanvas } from './utils/transformUtils';
@@ -74,6 +84,12 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [pendingImageMeta, setPendingImageMeta] = useState(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isImageSizeModalOpen, setIsImageSizeModalOpen] = useState(false);
+  const [isCanvasSizeModalOpen, setIsCanvasSizeModalOpen] = useState(false);
+  const [isFillModalOpen, setIsFillModalOpen] = useState(false);
+
+  // Internal Clipboard Engine
+  const clipboardRef = useRef(null);
 
   // Computed live filter CSS string for non-destructive GPU preview
   const filterString = getFilterCSSString(adjustments);
@@ -256,6 +272,129 @@ export default function App() {
     }, 40);
   }, [layers, activeLayerId, pushSnapshot]);
 
+  // Layer Operations: Layer via Copy (Ctrl+J)
+  const handleLayerViaCopy = useCallback(() => {
+    const activeLayer = layers.find((l) => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    if (marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+      const sourceCanvas = layerCanvasesRef.current[activeLayerId];
+      if (!sourceCanvas) return;
+
+      const extractedCanvas = extractSelectionPixels(sourceCanvas, marqueeSelection, canvasWidth, canvasHeight);
+      const newLayer = createNewLayer(`${activeLayer.name} Copy`);
+      newLayer.blendMode = activeLayer.blendMode;
+      newLayer.opacity = activeLayer.opacity;
+
+      const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+      const newLayers = [...layers];
+      newLayers.splice(activeIndex + 1, 0, newLayer);
+
+      setLayers(newLayers);
+      setActiveLayerId(newLayer.id);
+
+      setTimeout(() => {
+        layerCanvasesRef.current[newLayer.id] = extractedCanvas;
+        pushSnapshot(
+          { layers: newLayers, activeLayerId: newLayer.id },
+          'Layer via Copy',
+          'layer'
+        );
+      }, 40);
+    } else {
+      handleDuplicateLayer();
+    }
+  }, [layers, activeLayerId, marqueeSelection, canvasWidth, canvasHeight, handleDuplicateLayer, pushSnapshot]);
+
+  // Layer Operations: Layer via Cut (Shift+Ctrl+J)
+  const handleLayerViaCut = useCallback(() => {
+    const activeLayer = layers.find((l) => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    if (marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+      const sourceCanvas = layerCanvasesRef.current[activeLayerId];
+      if (!sourceCanvas) return;
+
+      const extractedCanvas = extractSelectionPixels(sourceCanvas, marqueeSelection, canvasWidth, canvasHeight);
+      clearSelectionPixels(
+        sourceCanvas,
+        marqueeSelection,
+        canvasWidth,
+        canvasHeight,
+        activeLayer.isBackground,
+        backgroundColor
+      );
+
+      const newLayer = createNewLayer(`${activeLayer.name} Cut`);
+      newLayer.blendMode = activeLayer.blendMode;
+      newLayer.opacity = activeLayer.opacity;
+
+      const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+      const newLayers = [...layers];
+      newLayers.splice(activeIndex + 1, 0, newLayer);
+
+      setLayers(newLayers);
+      setActiveLayerId(newLayer.id);
+
+      setTimeout(() => {
+        layerCanvasesRef.current[newLayer.id] = extractedCanvas;
+        pushSnapshot(
+          { layers: newLayers, activeLayerId: newLayer.id },
+          'Layer via Cut',
+          'layer'
+        );
+      }, 40);
+    }
+  }, [layers, activeLayerId, marqueeSelection, canvasWidth, canvasHeight, backgroundColor, pushSnapshot]);
+
+  // Layer Operations: Arrange Stack (Bring to Front, Forward, Backward, Back)
+  const handleArrangeLayer = useCallback((action) => {
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+    if (activeIndex < 0) return;
+    if (layers[activeIndex].isBackground) return; // Cannot rearrange background
+
+    const newLayers = [...layers];
+    const [layer] = newLayers.splice(activeIndex, 1);
+    const minIdx = newLayers[0]?.isBackground ? 1 : 0;
+
+    if (action === 'front') {
+      newLayers.push(layer);
+    } else if (action === 'forward') {
+      const targetIdx = Math.min(newLayers.length, activeIndex + 1);
+      newLayers.splice(targetIdx, 0, layer);
+    } else if (action === 'backward') {
+      const targetIdx = Math.max(minIdx, activeIndex - 1);
+      newLayers.splice(targetIdx, 0, layer);
+    } else if (action === 'back') {
+      newLayers.splice(minIdx, 0, layer);
+    }
+
+    setLayers(newLayers);
+    pushSnapshot({ layers: newLayers, activeLayerId: layer.id }, `Arrange Layer (${action})`, 'layer');
+  }, [layers, activeLayerId, pushSnapshot]);
+
+  // Layer Operations: Toggle Lock Transparency (/)
+  const handleToggleLockTransparency = useCallback((targetLayerId = null) => {
+    const id = targetLayerId || activeLayerId;
+    setLayers((prev) => {
+      const updated = prev.map((l) => {
+        if (l.id === id) {
+          const isLocked = !l.locks?.transparent;
+          return {
+            ...l,
+            locks: {
+              ...(l.locks || {}),
+              transparent: isLocked
+            }
+          };
+        }
+        return l;
+      });
+      pushSnapshot({ layers: updated }, 'Toggle Lock Transparency', 'layer');
+      return updated;
+    });
+  }, [activeLayerId, pushSnapshot]);
+
   // Layer Operations: Reorder Layers
   const handleMoveLayerUp = useCallback((actualIndex) => {
     if (actualIndex >= layers.length - 1) return;
@@ -418,6 +557,208 @@ export default function App() {
       'layer'
     );
   }, [layers, canvasWidth, canvasHeight, pushSnapshot]);
+
+  // Layer Operations: Merge Visible (Shift+Ctrl+E)
+  const handleMergeVisible = useCallback(() => {
+    const visibleLayers = layers.filter((l) => l.visible);
+    if (visibleLayers.length <= 1) return;
+
+    const compCanvas = compositeAllVisibleLayers(layers, layerCanvasesRef, canvasWidth, canvasHeight);
+
+    const mergedLayer = createNewLayer('Merged Visible');
+    mergedLayer.blendMode = 'normal';
+    mergedLayer.opacity = 100;
+
+    let highestVisibleIndex = -1;
+    layers.forEach((l, idx) => {
+      if (l.visible) highestVisibleIndex = idx;
+    });
+
+    const newLayers = [];
+    layers.forEach((l, idx) => {
+      if (idx === highestVisibleIndex) {
+        newLayers.push(mergedLayer);
+      } else if (!l.visible) {
+        newLayers.push(l);
+      } else {
+        delete layerCanvasesRef.current[l.id];
+      }
+    });
+
+    layerCanvasesRef.current[mergedLayer.id] = compCanvas;
+
+    setLayers(newLayers);
+    setActiveLayerId(mergedLayer.id);
+
+    pushSnapshot(
+      { layers: newLayers, activeLayerId: mergedLayer.id },
+      'Merge Visible',
+      'layer'
+    );
+  }, [layers, canvasWidth, canvasHeight, pushSnapshot]);
+
+  // Advanced Clipboard Engine: Copy (Ctrl+C) and Copy Merged (Shift+Ctrl+C)
+  const handleCopy = useCallback((isMerged = false) => {
+    let sourceCanvas;
+    if (isMerged) {
+      sourceCanvas = compositeAllVisibleLayers(layers, layerCanvasesRef, canvasWidth, canvasHeight);
+    } else {
+      sourceCanvas = layerCanvasesRef.current[activeLayerId];
+    }
+    if (!sourceCanvas) return;
+
+    if (marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+      const extracted = extractSelectionPixels(sourceCanvas, marqueeSelection, canvasWidth, canvasHeight);
+      clipboardRef.current = {
+        canvas: extracted,
+        x: marqueeSelection.x,
+        y: marqueeSelection.y,
+        width: canvasWidth,
+        height: canvasHeight,
+        hasCoordinates: true,
+        isMerged
+      };
+    } else {
+      clipboardRef.current = {
+        canvas: cloneCanvas(sourceCanvas),
+        x: 0,
+        y: 0,
+        width: canvasWidth,
+        height: canvasHeight,
+        hasCoordinates: false,
+        isMerged
+      };
+    }
+  }, [layers, activeLayerId, marqueeSelection, canvasWidth, canvasHeight]);
+
+  // Advanced Clipboard Engine: Paste (Ctrl+V) and Paste in Place (Shift+Ctrl+V)
+  const handlePaste = useCallback((inPlace = false) => {
+    if (!clipboardRef.current?.canvas) return;
+
+    const clip = clipboardRef.current;
+    const newLayer = createNewLayer(inPlace ? 'Pasted in Place' : 'Pasted Layer');
+    const activeIndex = layers.findIndex((l) => l.id === activeLayerId);
+    const insertIndex = activeIndex >= 0 ? activeIndex + 1 : layers.length;
+
+    const newLayers = [...layers];
+    newLayers.splice(insertIndex, 0, newLayer);
+
+    const pastedCanvas = document.createElement('canvas');
+    pastedCanvas.width = canvasWidth;
+    pastedCanvas.height = canvasHeight;
+    const ctx = pastedCanvas.getContext('2d');
+    ctx.drawImage(clip.canvas, 0, 0);
+
+    setLayers(newLayers);
+    setActiveLayerId(newLayer.id);
+
+    setTimeout(() => {
+      layerCanvasesRef.current[newLayer.id] = pastedCanvas;
+      pushSnapshot(
+        { layers: newLayers, activeLayerId: newLayer.id },
+        inPlace ? 'Paste in Place' : 'Paste Layer',
+        'layer'
+      );
+    }, 40);
+  }, [layers, activeLayerId, canvasWidth, canvasHeight, pushSnapshot]);
+
+  // Image Size Dialog Commit (Alt+Ctrl+I)
+  const handleCommitImageSize = useCallback(({ width, height, resolution, resampleMethod }) => {
+    const newW = Math.round(width);
+    const newH = Math.round(height);
+    if (newW <= 0 || newH <= 0) return;
+
+    const resampledCanvases = {};
+    layers.forEach((l) => {
+      const src = layerCanvasesRef.current[l.id];
+      if (src) {
+        resampledCanvases[l.id] = resampleCanvas(src, newW, newH);
+      }
+    });
+
+    setCanvasWidth(newW);
+    setCanvasHeight(newH);
+
+    setTimeout(() => {
+      layers.forEach((l) => {
+        if (resampledCanvases[l.id]) {
+          layerCanvasesRef.current[l.id] = resampledCanvases[l.id];
+        }
+      });
+
+      pushSnapshot(
+        { canvasWidth: newW, canvasHeight: newH },
+        `Image Size: ${newW}×${newH}`,
+        'transform'
+      );
+    }, 40);
+  }, [layers, pushSnapshot]);
+
+  // Canvas Size Dialog Commit (Alt+Ctrl+C)
+  const handleCommitCanvasSize = useCallback(({ width, height, anchor, extensionColor }) => {
+    const newW = Math.round(width);
+    const newH = Math.round(height);
+    if (newW <= 0 || newH <= 0) return;
+
+    const anchoredCanvases = {};
+    layers.forEach((l) => {
+      const src = layerCanvasesRef.current[l.id];
+      const res = anchorCanvas(
+        src,
+        canvasWidth,
+        canvasHeight,
+        newW,
+        newH,
+        anchor,
+        l.isBackground,
+        extensionColor
+      );
+      anchoredCanvases[l.id] = res.canvas;
+    });
+
+    setCanvasWidth(newW);
+    setCanvasHeight(newH);
+
+    setTimeout(() => {
+      layers.forEach((l) => {
+        if (anchoredCanvases[l.id]) {
+          layerCanvasesRef.current[l.id] = anchoredCanvases[l.id];
+        }
+      });
+
+      pushSnapshot(
+        { canvasWidth: newW, canvasHeight: newH },
+        `Canvas Size: ${newW}×${newH}`,
+        'crop'
+      );
+    }, 40);
+  }, [layers, canvasWidth, canvasHeight, pushSnapshot]);
+
+  // Fill Dialog Commit (Shift+F5)
+  const handleCommitFill = useCallback(({ color, blendMode, opacity, preserveTransparency }) => {
+    const canvas = layerCanvasesRef.current[activeLayerId];
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+
+    if (marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+      applySelectionPathToContext(ctx, marqueeSelection, canvasWidth, canvasHeight);
+    }
+
+    ctx.globalAlpha = opacity / 100;
+    if (preserveTransparency) {
+      ctx.globalCompositeOperation = 'source-atop';
+    } else {
+      ctx.globalCompositeOperation = getCompositeOperation(blendMode);
+    }
+
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    pushSnapshot({}, 'Fill', 'bucket');
+  }, [activeLayerId, marqueeSelection, canvasWidth, canvasHeight, pushSnapshot]);
 
   // Project: Save Project (.psd.json)
   const handleSaveProject = useCallback(() => {
@@ -589,18 +930,72 @@ export default function App() {
       const tag = e.target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
 
-      // Ctrl + Alt shortcuts
+      // 1. Ctrl + Alt shortcuts
       if ((e.ctrlKey || e.metaKey) && e.altKey) {
         if (e.key.toLowerCase() === 'g') {
           e.preventDefault();
           handleToggleClippingMask();
+        } else if (e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          setIsImageSizeModalOpen(true);
+        } else if (e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          setIsCanvasSizeModalOpen(true);
         }
         return;
       }
 
-      // Ctrl shortcuts
+      // 2. Ctrl + Shift shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+        if (e.key.toLowerCase() === 'j') {
+          e.preventDefault();
+          handleLayerViaCut();
+        } else if (e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          handleCopy(true);
+        } else if (e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          handlePaste(true);
+        } else if (e.key.toLowerCase() === 'e') {
+          e.preventDefault();
+          handleMergeVisible();
+        } else if (e.key === ']' || e.code === 'BracketRight') {
+          e.preventDefault();
+          handleArrangeLayer('front');
+        } else if (e.key === '[' || e.code === 'BracketLeft') {
+          e.preventDefault();
+          handleArrangeLayer('back');
+        } else if (e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          handleInvertMarquee();
+        } else if (e.key.toLowerCase() === 'n') {
+          e.preventDefault();
+          handleAddLayer();
+        }
+        return;
+      }
+
+      // 3. Ctrl shortcuts (without Shift / Alt)
       if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === 'z') {
+        if (e.key.toLowerCase() === 'j') {
+          e.preventDefault();
+          handleLayerViaCopy();
+        } else if (e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          handleCopy(false);
+        } else if (e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          handlePaste(false);
+        } else if (e.key.toLowerCase() === 'e') {
+          e.preventDefault();
+          handleMergeDown();
+        } else if (e.key === ']' || e.code === 'BracketRight') {
+          e.preventDefault();
+          handleArrangeLayer('forward');
+        } else if (e.key === '[' || e.code === 'BracketLeft') {
+          e.preventDefault();
+          handleArrangeLayer('backward');
+        } else if (e.key.toLowerCase() === 'z') {
           e.preventDefault();
           undo();
         } else if (e.key.toLowerCase() === 'y') {
@@ -609,9 +1004,6 @@ export default function App() {
         } else if (e.key.toLowerCase() === 't') {
           e.preventDefault();
           setActiveTool('select');
-        } else if (e.key.toLowerCase() === 'e') {
-          e.preventDefault();
-          handleMergeDown();
         } else if (e.key.toLowerCase() === 's') {
           e.preventDefault();
           handleSaveProject();
@@ -624,16 +1016,52 @@ export default function App() {
         } else if (e.key.toLowerCase() === 'd') {
           e.preventDefault();
           setMarqueeSelection(null);
-        } else if (e.shiftKey && e.key.toLowerCase() === 'i') {
+        } else if (e.key.toLowerCase() === 'a') {
           e.preventDefault();
-          handleInvertMarquee();
+          setMarqueeSelection({
+            type: 'rect',
+            x: 0,
+            y: 0,
+            width: canvasWidth,
+            height: canvasHeight,
+            inverted: false
+          });
         }
         return;
       }
 
+      // 4. Shift shortcuts (e.g. Shift + F5 for Fill dialog)
+      if (e.shiftKey) {
+        if (e.key === 'F5' || e.code === 'F5') {
+          e.preventDefault();
+          setIsFillModalOpen(true);
+          return;
+        }
+      }
+
       if (e.altKey) return;
 
-      // Single-key shortcuts
+      // 5. Lock Transparency shortcut (/)
+      if (e.key === '/' || e.code === 'Slash') {
+        e.preventDefault();
+        handleToggleLockTransparency();
+        return;
+      }
+
+      // 6. Delete / Backspace when selection exists triggers Fill dialog, or clears active layer
+      if ((e.key === 'Backspace' || e.key === 'Delete') && marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+        e.preventDefault();
+        setIsFillModalOpen(true);
+        return;
+      }
+
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        handleClearActiveLayer();
+        return;
+      }
+
+      // 7. Single-key tool shortcuts
       switch (e.key.toLowerCase()) {
         case 'd':
           handleResetDefaultColors();
@@ -698,7 +1126,19 @@ export default function App() {
     handleSwapColors,
     handleToggleClippingMask,
     handleMergeDown,
+    handleMergeVisible,
+    handleLayerViaCopy,
+    handleLayerViaCut,
+    handleArrangeLayer,
+    handleToggleLockTransparency,
+    handleCopy,
+    handlePaste,
+    handleClearActiveLayer,
     handleSaveProject,
+    handleAddLayer,
+    marqueeSelection,
+    canvasWidth,
+    canvasHeight,
     undo,
     redo
   ]);
@@ -720,9 +1160,22 @@ export default function App() {
         onAddLayer={handleAddLayer}
         onDeleteLayer={handleDeleteLayer}
         onDuplicateLayer={handleDuplicateLayer}
+        onLayerViaCopy={handleLayerViaCopy}
+        onLayerViaCut={handleLayerViaCut}
+        onArrangeLayer={handleArrangeLayer}
         onToggleClippingMask={handleToggleClippingMask}
         onMergeDown={handleMergeDown}
+        onMergeVisible={handleMergeVisible}
         onFlattenImage={handleFlattenImage}
+        onToggleLockTransparency={handleToggleLockTransparency}
+        isTransparencyLocked={Boolean(layers.find((l) => l.id === activeLayerId)?.locks?.transparent)}
+        onCopy={handleCopy}
+        onCopyMerged={() => handleCopy(true)}
+        onPaste={handlePaste}
+        onPasteInPlace={() => handlePaste(true)}
+        onOpenFillModal={() => setIsFillModalOpen(true)}
+        onOpenImageSize={() => setIsImageSizeModalOpen(true)}
+        onOpenCanvasSize={() => setIsCanvasSizeModalOpen(true)}
         onSaveProject={handleSaveProject}
         layersCount={layers.length}
         showRulers={showRulers}
@@ -886,6 +1339,10 @@ export default function App() {
           onChangeLayerName={handleChangeLayerName}
           onToggleClippingMask={handleToggleClippingMask}
           onMergeDown={handleMergeDown}
+          onMergeVisible={handleMergeVisible}
+          onToggleLockTransparency={handleToggleLockTransparency}
+          onLayerViaCopy={handleLayerViaCopy}
+          onLayerViaCut={handleLayerViaCut}
           historyList={historyList}
           currentIndex={currentIndex}
           onJumpToIndex={jumpToIndex}
@@ -934,6 +1391,37 @@ export default function App() {
         canvasHeight={canvasHeight}
         layerCanvasesRef={layerCanvasesRef}
         filterString={filterString}
+      />
+
+      {/* Phase 6A: Image Size Dialog (Alt+Ctrl+I) */}
+      <ImageSizeModal
+        isOpen={isImageSizeModalOpen}
+        onClose={() => setIsImageSizeModalOpen(false)}
+        currentWidth={canvasWidth}
+        currentHeight={canvasHeight}
+        onCommitImageSize={handleCommitImageSize}
+      />
+
+      {/* Phase 6A: Canvas Size Dialog (Alt+Ctrl+C) */}
+      <CanvasSizeModal
+        isOpen={isCanvasSizeModalOpen}
+        onClose={() => setIsCanvasSizeModalOpen(false)}
+        currentWidth={canvasWidth}
+        currentHeight={canvasHeight}
+        foregroundColor={foregroundColor}
+        backgroundColor={backgroundColor}
+        onCommitCanvasSize={handleCommitCanvasSize}
+      />
+
+      {/* Phase 6A: Fill Dialog (Shift+F5) */}
+      <FillModal
+        isOpen={isFillModalOpen}
+        onClose={() => setIsFillModalOpen(false)}
+        foregroundColor={foregroundColor}
+        backgroundColor={backgroundColor}
+        isTransparencyLocked={Boolean(layers.find((l) => l.id === activeLayerId)?.locks?.transparent)}
+        hasSelection={Boolean(marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0)}
+        onCommitFill={handleCommitFill}
       />
     </div>
   );

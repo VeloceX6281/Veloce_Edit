@@ -56,6 +56,10 @@ export default function RightSidebar({
   onChangeLayerName,
   onToggleClippingMask,
   onMergeDown,
+  onMergeVisible,
+  onToggleLockTransparency,
+  onLayerViaCopy,
+  onLayerViaCut,
   // Visual History props
   historyList = [],
   currentIndex = 0,
@@ -447,6 +451,10 @@ export default function RightSidebar({
           onChangeLayerName={onChangeLayerName}
           onToggleClippingMask={onToggleClippingMask}
           onMergeDown={onMergeDown}
+          onMergeVisible={onMergeVisible}
+          onToggleLockTransparency={onToggleLockTransparency}
+          onLayerViaCopy={onLayerViaCopy}
+          onLayerViaCut={onLayerViaCut}
           onOpenAdjustments={() => setMidTab('adjustments')}
         />
       </div>

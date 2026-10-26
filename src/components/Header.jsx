@@ -14,9 +14,22 @@ export default function Header({
   onAddLayer,
   onDeleteLayer,
   onDuplicateLayer,
+  onLayerViaCopy,
+  onLayerViaCut,
+  onArrangeLayer,
   onToggleClippingMask,
   onMergeDown,
+  onMergeVisible,
   onFlattenImage,
+  onToggleLockTransparency,
+  isTransparencyLocked = false,
+  onCopy,
+  onCopyMerged,
+  onPaste,
+  onPasteInPlace,
+  onOpenFillModal,
+  onOpenImageSize,
+  onOpenCanvasSize,
   onSaveProject,
   layersCount = 1,
   showRulers,
@@ -90,11 +103,17 @@ export default function Header({
         { label: 'Undo', shortcut: 'Ctrl+Z', action: onUndo, disabled: !canUndo },
         { label: 'Redo', shortcut: 'Ctrl+Y', action: onRedo, disabled: !canRedo },
         { divider: true },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: onLayerViaCut },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => onCopy && onCopy(false) },
+        { label: 'Copy Merged', shortcut: 'Shift+Ctrl+C', action: () => onCopyMerged && onCopyMerged() },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => onPaste && onPaste(false) },
+        { label: 'Paste in Place', shortcut: 'Shift+Ctrl+V', action: () => onPasteInPlace && onPasteInPlace() },
+        { divider: true },
+        { label: 'Fill...', shortcut: 'Shift+F5', action: onOpenFillModal },
         { label: 'Free Transform', shortcut: 'Ctrl+T', action: onFreeTransform },
         { label: 'Deselect', shortcut: 'Ctrl+D', action: onDeselect },
         { label: 'Clear Active Layer', shortcut: 'Del', action: onClearCanvas },
         { divider: true },
-        { label: 'Fill Layer...', shortcut: 'Alt+Backspace', action: onClearCanvas },
         { label: 'Preferences...', shortcut: 'Ctrl+K', disabled: true }
       ]
     },
@@ -104,8 +123,8 @@ export default function Header({
       children: [
         { label: 'Mode: RGB Color (8 Bit)', disabled: true, checked: true },
         { divider: true },
-        { label: 'Image Size...', action: onFitToScreen },
-        { label: 'Canvas Size...', action: onFitToScreen },
+        { label: 'Image Size...', shortcut: 'Alt+Ctrl+I', action: onOpenImageSize },
+        { label: 'Canvas Size...', shortcut: 'Alt+Ctrl+C', action: onOpenCanvasSize },
         { divider: true },
         { label: 'Adjustments (Right Panel)', shortcut: 'F8', action: () => {} },
         { label: 'Invert Colors', shortcut: 'Ctrl+I', action: () => {} }
@@ -116,18 +135,43 @@ export default function Header({
       label: 'Layer',
       children: [
         { label: 'New Layer', shortcut: 'Shift+Ctrl+N', action: onAddLayer },
-        { label: 'Duplicate Layer', shortcut: 'Ctrl+J', action: onDuplicateLayer || onAddLayer },
+        { label: 'Layer via Copy', shortcut: 'Ctrl+J', action: onLayerViaCopy },
+        { label: 'Layer via Cut', shortcut: 'Shift+Ctrl+J', action: onLayerViaCut },
+        { label: 'Duplicate Layer', action: onDuplicateLayer },
         { label: 'Delete Layer', action: onDeleteLayer, disabled: layersCount <= 1 },
         { divider: true },
+        {
+          label: 'Arrange',
+          submenu: [
+            { label: 'Bring to Front', shortcut: 'Ctrl+Shift+]', action: () => onArrangeLayer && onArrangeLayer('front') },
+            { label: 'Bring Forward', shortcut: 'Ctrl+]', action: () => onArrangeLayer && onArrangeLayer('forward') },
+            { label: 'Send Backward', shortcut: 'Ctrl+[', action: () => onArrangeLayer && onArrangeLayer('backward') },
+            { label: 'Send to Back', shortcut: 'Ctrl+Shift+[', action: () => onArrangeLayer && onArrangeLayer('back') }
+          ]
+        },
+        { divider: true },
+        {
+          label: 'Lock Transparency',
+          shortcut: '/',
+          checked: isTransparencyLocked,
+          action: onToggleLockTransparency
+        },
         {
           label: 'Create / Release Clipping Mask',
           shortcut: 'Ctrl+Alt+G',
           action: onToggleClippingMask
         },
+        { divider: true },
         {
           label: 'Merge Down',
           shortcut: 'Ctrl+E',
           action: onMergeDown,
+          disabled: layersCount <= 1
+        },
+        {
+          label: 'Merge Visible',
+          shortcut: 'Shift+Ctrl+E',
+          action: onMergeVisible,
           disabled: layersCount <= 1
         },
         {
@@ -254,6 +298,59 @@ export default function Header({
                     {menu.children.map((child, idx) => {
                       if (child.divider) {
                         return <div key={idx} className="h-[1px] bg-[#333333] my-1" />;
+                      }
+
+                      if (child.submenu) {
+                        return (
+                          <div key={idx} className="relative group/sub w-full">
+                            <div
+                              className={`w-full px-3 py-1 text-left flex items-center justify-between gap-4 transition cursor-default ${
+                                child.disabled
+                                  ? 'text-zinc-600 cursor-not-allowed'
+                                  : 'hover:bg-[#1473e6] hover:text-white text-zinc-200'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className="w-2" />
+                                {child.label}
+                              </span>
+                              <span className="text-[9px] text-zinc-400">▶</span>
+                            </div>
+                            <div className="hidden group-hover/sub:block absolute left-full top-0 min-w-[200px] bg-[#222222] border border-[#3a3a3a] py-1 shadow-2xl z-50 text-[11px] text-zinc-200 rounded-[2px]">
+                              {child.submenu.map((sub, sIdx) => {
+                                if (sub.divider) {
+                                  return <div key={sIdx} className="h-[1px] bg-[#333333] my-1" />;
+                                }
+                                return (
+                                  <button
+                                    key={sIdx}
+                                    type="button"
+                                    disabled={sub.disabled}
+                                    onClick={() => {
+                                      if (sub.action) sub.action();
+                                      setActiveMenu(null);
+                                    }}
+                                    className={`w-full px-3 py-1 text-left flex items-center justify-between gap-4 transition ${
+                                      sub.disabled
+                                        ? 'text-zinc-600 cursor-not-allowed'
+                                        : 'hover:bg-[#1473e6] hover:text-white text-zinc-200'
+                                    }`}
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      <span className="w-2" />
+                                      {sub.label}
+                                    </span>
+                                    {sub.shortcut && (
+                                      <span className="text-[10px] text-zinc-500 font-mono">
+                                        {sub.shortcut}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
                       }
 
                       return (
