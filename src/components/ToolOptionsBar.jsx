@@ -47,7 +47,31 @@ export default function ToolOptionsBar({
   fontStyle = 'Regular',
   setFontStyle,
   textAlign = 'left',
-  setTextAlign
+  setTextAlign,
+  // Gradient props
+  gradientStyle = 'linear',
+  setGradientStyle,
+  gradientBlendMode = 'normal',
+  setGradientBlendMode,
+  gradientOpacity = 100,
+  setGradientOpacity,
+  gradientReverse = false,
+  setGradientReverse,
+  foregroundColor = '#000000',
+  backgroundColor = '#ffffff',
+  // Dodge, Burn & Sponge props
+  dodgeBurnRange = 'midtones',
+  setDodgeBurnRange,
+  dodgeBurnExposure = 50,
+  setDodgeBurnExposure,
+  spongeMode = 'desaturate',
+  setSpongeMode,
+  spongeFlow = 50,
+  setSpongeFlow,
+  // Polygonal Lasso props
+  polyPointsCount = 0,
+  onClosePolygonalLasso,
+  onCancelPolygonalLasso
 }) {
   // Local fallback states if not controlled
   const [localHardness, setLocalHardness] = useState(100);
@@ -101,6 +125,33 @@ export default function ToolOptionsBar({
   const curTextAlign = setTextAlign ? textAlign : localTextAlign;
   const changeTextAlign = (val) => (setTextAlign ? setTextAlign(val) : setLocalTextAlign(val));
 
+  // Compute gradient preview CSS
+  const gradLeft = gradientReverse ? backgroundColor : foregroundColor;
+  const gradRight = gradientReverse ? foregroundColor : backgroundColor;
+
+  const toolDisplayNames = {
+    select: 'Move',
+    magic_wand: 'Magic Wand',
+    clone: 'Clone Stamp',
+    gradient: 'Gradient Tool',
+    bucket: 'Paint Bucket',
+    dodge: 'Dodge Tool',
+    burn: 'Burn Tool',
+    sponge: 'Sponge Tool',
+    polygonal_lasso: 'Polygonal Lasso',
+    lasso: 'Lasso',
+    brush: 'Brush',
+    eraser: 'Eraser',
+    crop: 'Crop',
+    text: 'Type',
+    shapes: 'Shape',
+    rectangle: 'Rectangle',
+    circle: 'Ellipse',
+    hand: 'Hand',
+    zoom: 'Zoom',
+    eyedropper: 'Eyedropper'
+  };
+
   return (
     <div className="h-[30px] bg-[#282828] border-b border-[#181818] px-2 flex items-center justify-between text-[11px] text-zinc-300 z-20 select-none font-sans overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0">
       <div className="flex items-center gap-2.5">
@@ -108,13 +159,7 @@ export default function ToolOptionsBar({
         <div className="flex items-center gap-1.5 text-zinc-200 font-medium shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6]" />
           <span className="capitalize font-semibold text-zinc-100">
-            {activeTool === 'select'
-              ? 'Move'
-              : activeTool === 'magic_wand'
-              ? 'Magic Wand'
-              : activeTool === 'clone'
-              ? 'Clone Stamp'
-              : activeTool.replace('marquee-', 'Marquee ').replace('shapes', 'Shape')}
+            {toolDisplayNames[activeTool] || activeTool.replace('marquee-', 'Marquee ')}
           </span>
         </div>
 
@@ -306,7 +351,208 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 3. CLONE STAMP OPTIONS */}
+        {/* 3. GRADIENT TOOL OPTIONS */}
+        {activeTool === 'gradient' && (
+          <div className="flex items-center gap-2.5">
+            {/* Gradient Preview Bar */}
+            <div className="flex items-center gap-1.5">
+              <div
+                className="w-16 h-4 rounded-[2px] border border-[#3a3a3a] shadow-inner"
+                style={{
+                  background: `linear-gradient(to right, ${gradLeft}, ${gradRight})`
+                }}
+                title={`Gradient: ${gradLeft} -> ${gradRight}`}
+              />
+            </div>
+
+            {/* Style: Linear vs Radial */}
+            <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] p-0.5 gap-0.5">
+              <button
+                type="button"
+                onClick={() => setGradientStyle && setGradientStyle('linear')}
+                className={`px-1.5 py-0.5 rounded-[2px] transition flex items-center gap-1 ${
+                  gradientStyle === 'linear'
+                    ? 'bg-[#1473e6] text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+                title="Linear Gradient"
+              >
+                <span>Linear</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGradientStyle && setGradientStyle('radial')}
+                className={`px-1.5 py-0.5 rounded-[2px] transition flex items-center gap-1 ${
+                  gradientStyle === 'radial'
+                    ? 'bg-[#1473e6] text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+                title="Radial Gradient"
+              >
+                <span>Radial</span>
+              </button>
+            </div>
+
+            {/* Mode Dropdown */}
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Mode:</span>
+              <select
+                value={gradientBlendMode}
+                onChange={(e) => setGradientBlendMode && setGradientBlendMode(e.target.value)}
+                className="bg-[#1c1c1c] text-zinc-200 border border-[#3a3a3a] px-1 py-0.5 rounded-[2px] cursor-pointer focus:outline-none text-[10px]"
+              >
+                <option value="normal">Normal</option>
+                <option value="multiply">Multiply</option>
+                <option value="screen">Screen</option>
+                <option value="overlay">Overlay</option>
+                <option value="darken">Darken</option>
+                <option value="lighten">Lighten</option>
+                <option value="color-dodge">Color Dodge</option>
+                <option value="color-burn">Color Burn</option>
+              </select>
+            </div>
+
+            {/* Opacity */}
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Opacity:</span>
+              <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={gradientOpacity}
+                  onChange={(e) => setGradientOpacity && setGradientOpacity(Math.max(1, Math.min(100, Number(e.target.value))))}
+                  className="w-6 bg-transparent text-zinc-200 text-right font-mono focus:outline-none text-[10px]"
+                />
+                <span className="text-zinc-500 text-[10px] ml-0.5">%</span>
+              </div>
+            </div>
+
+            {/* Reverse Checkbox */}
+            <label className="flex items-center gap-1 cursor-pointer text-zinc-300 hover:text-white">
+              <input
+                type="checkbox"
+                checked={gradientReverse}
+                onChange={(e) => setGradientReverse && setGradientReverse(e.target.checked)}
+                className="w-3 h-3 rounded-[2px] accent-[#1473e6] cursor-pointer"
+              />
+              <span>Reverse</span>
+            </label>
+
+            <span className="text-[#888] text-[10px] italic">Drag on canvas to draw gradient</span>
+          </div>
+        )}
+
+        {/* 4. DODGE & BURN OPTIONS */}
+        {(activeTool === 'dodge' || activeTool === 'burn') && (
+          <div className="flex items-center gap-2.5">
+            {/* Brush Size */}
+            <div className="flex items-center gap-1.5 bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
+              <span className="text-zinc-400">Size:</span>
+              <span className="font-mono text-zinc-200 text-[10px] w-5 text-right">{brushSize}</span>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={brushSize}
+                onChange={(e) => setBrushSize(Number(e.target.value))}
+                className="w-14 accent-[#1473e6] cursor-pointer h-1 bg-[#3a3a3a] rounded"
+                title={`Size: ${brushSize}px`}
+              />
+              <span className="text-zinc-500 text-[10px]">px</span>
+            </div>
+
+            {/* Range: Shadows, Midtones, Highlights */}
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Range:</span>
+              <select
+                value={dodgeBurnRange}
+                onChange={(e) => setDodgeBurnRange && setDodgeBurnRange(e.target.value)}
+                className="bg-[#1c1c1c] text-zinc-200 border border-[#3a3a3a] px-1 py-0.5 rounded-[2px] cursor-pointer focus:outline-none text-[10px]"
+              >
+                <option value="shadows">Shadows</option>
+                <option value="midtones">Midtones</option>
+                <option value="highlights">Highlights</option>
+              </select>
+            </div>
+
+            {/* Exposure */}
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Exposure:</span>
+              <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={dodgeBurnExposure}
+                  onChange={(e) => setDodgeBurnExposure && setDodgeBurnExposure(Math.max(1, Math.min(100, Number(e.target.value))))}
+                  className="w-6 bg-transparent text-zinc-200 text-right font-mono focus:outline-none text-[10px]"
+                />
+                <span className="text-zinc-500 text-[10px] ml-0.5">%</span>
+              </div>
+            </div>
+
+            <span className="text-[#888] text-[10px] italic">
+              {activeTool === 'dodge' ? 'Lightens pixels on stroke' : 'Darkens pixels on stroke'}
+            </span>
+          </div>
+        )}
+
+        {/* 5. SPONGE OPTIONS */}
+        {activeTool === 'sponge' && (
+          <div className="flex items-center gap-2.5">
+            {/* Brush Size */}
+            <div className="flex items-center gap-1.5 bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
+              <span className="text-zinc-400">Size:</span>
+              <span className="font-mono text-zinc-200 text-[10px] w-5 text-right">{brushSize}</span>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={brushSize}
+                onChange={(e) => setBrushSize(Number(e.target.value))}
+                className="w-14 accent-[#1473e6] cursor-pointer h-1 bg-[#3a3a3a] rounded"
+                title={`Size: ${brushSize}px`}
+              />
+              <span className="text-zinc-500 text-[10px]">px</span>
+            </div>
+
+            {/* Mode: Desaturate / Saturate */}
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Mode:</span>
+              <select
+                value={spongeMode}
+                onChange={(e) => setSpongeMode && setSpongeMode(e.target.value)}
+                className="bg-[#1c1c1c] text-zinc-200 border border-[#3a3a3a] px-1 py-0.5 rounded-[2px] cursor-pointer focus:outline-none text-[10px]"
+              >
+                <option value="desaturate">Desaturate</option>
+                <option value="saturate">Saturate</option>
+              </select>
+            </div>
+
+            {/* Flow */}
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Flow:</span>
+              <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={spongeFlow}
+                  onChange={(e) => setSpongeFlow && setSpongeFlow(Math.max(1, Math.min(100, Number(e.target.value))))}
+                  className="w-6 bg-transparent text-zinc-200 text-right font-mono focus:outline-none text-[10px]"
+                />
+                <span className="text-zinc-500 text-[10px] ml-0.5">%</span>
+              </div>
+            </div>
+
+            <span className="text-[#888] text-[10px] italic">
+              {spongeMode === 'saturate' ? 'Increases saturation under stroke' : 'Decreases saturation under stroke'}
+            </span>
+          </div>
+        )}
+
+        {/* 6. CLONE STAMP OPTIONS */}
         {activeTool === 'clone' && (
           <div className="flex items-center gap-2.5">
             {/* Size Picker */}
@@ -372,7 +618,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 4. MAGIC WAND OPTIONS */}
+        {/* 7. MAGIC WAND OPTIONS */}
         {activeTool === 'magic_wand' && (
           <div className="flex items-center gap-2.5">
             {/* Tolerance Input */}
@@ -429,7 +675,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 5. CROP OPTIONS */}
+        {/* 8. CROP OPTIONS */}
         {activeTool === 'crop' && (
           <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-1.5">
@@ -473,7 +719,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 6. TEXT OPTIONS */}
+        {/* 9. TEXT OPTIONS */}
         {activeTool === 'text' && (
           <div className="flex items-center gap-2.5">
             {/* Font Family */}
@@ -576,10 +822,10 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 7. MARQUEE & LASSO OPTIONS */}
-        {(activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee' || activeTool === 'lasso') && (
+        {/* 10. MARQUEE & LASSO OPTIONS */}
+        {(activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee' || activeTool === 'lasso' || activeTool === 'polygonal_lasso') && (
           <div className="flex items-center gap-2.5">
-            {activeTool !== 'lasso' && (
+            {activeTool !== 'lasso' && activeTool !== 'polygonal_lasso' && (
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] p-0.5 gap-0.5">
                 <button
                   type="button"
@@ -606,6 +852,39 @@ export default function ToolOptionsBar({
               </div>
             )}
 
+            {/* Polygonal Lasso Specific Helpers */}
+            {activeTool === 'polygonal_lasso' && (
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-400">
+                  {polyPointsCount > 0 ? (
+                    <span className="text-cyan-400 font-mono font-medium">{polyPointsCount} points placed</span>
+                  ) : (
+                    'Click to add vertices. Enter / Double-click to close'
+                  )}
+                </span>
+                {polyPointsCount >= 3 && (
+                  <button
+                    type="button"
+                    onClick={onClosePolygonalLasso}
+                    className="px-2 py-0.5 rounded-[2px] bg-[#1473e6] hover:bg-[#0d66d0] text-white font-medium text-[10px] transition"
+                    title="Close Polygon and create selection (Enter)"
+                  >
+                    Close Polygon (Enter)
+                  </button>
+                )}
+                {polyPointsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={onCancelPolygonalLasso}
+                    className="px-1.5 py-0.5 rounded-[2px] bg-[#1c1c1c] hover:bg-[#383838] border border-[#3a3a3a] text-zinc-300 text-[10px] transition"
+                    title="Cancel current polygon (Esc)"
+                  >
+                    Cancel (Esc)
+                  </button>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={onDeselectMarquee}
@@ -615,7 +894,7 @@ export default function ToolOptionsBar({
                   ? 'border-[#3a3a3a] bg-[#1c1c1c] hover:bg-[#383838] text-zinc-200 cursor-pointer'
                   : 'border-[#262626] text-zinc-600 cursor-not-allowed'
               }`}
-              title="Deselect Marquee (Ctrl+D)"
+              title="Deselect (Ctrl+D)"
             >
               Deselect (Ctrl+D)
             </button>
@@ -636,7 +915,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 8. SHAPES OPTIONS */}
+        {/* 11. SHAPES OPTIONS */}
         {(activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') && (
           <div className="flex items-center gap-2.5">
             <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] p-0.5 gap-0.5">
@@ -725,7 +1004,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 9. EYEDROPPER OPTIONS */}
+        {/* 12. EYEDROPPER OPTIONS */}
         {activeTool === 'eyedropper' && (
           <div className="flex items-center gap-2.5">
             <span className="text-zinc-400">Sample Size:</span>
@@ -734,7 +1013,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 10. HAND & ZOOM OPTIONS */}
+        {/* 13. HAND & ZOOM OPTIONS */}
         {(activeTool === 'hand' || activeTool === 'zoom') && (
           <div className="flex items-center gap-2">
             <button

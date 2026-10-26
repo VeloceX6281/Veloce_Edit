@@ -35,10 +35,12 @@ export default function Toolbar({
     },
     {
       id: 'lasso',
-      name: 'Lasso Tool',
+      name: activeTool === 'polygonal_lasso' ? 'Polygonal Lasso Tool' : 'Lasso Tool',
       shortcut: 'L',
       hasFlyout: true,
-      icon: (
+      icon: activeTool === 'polygonal_lasso' ? (
+        <polygon points="4,18 9,5 19,8 16,19 9,15" strokeDasharray="2 2" />
+      ) : (
         <path d="M7 15c-3-1.5-3.5-5.5-1.5-8C7.5 4.5 13 4 17 6.5s4 6.5 2 9c-2.5 3-7 3.5-10 1.5l-5 5" />
       )
     },
@@ -116,16 +118,51 @@ export default function Toolbar({
     },
     {
       id: 'bucket',
-      name: 'Paint Bucket Tool',
+      name: activeTool === 'gradient' ? 'Gradient Tool' : 'Paint Bucket Tool',
       shortcut: 'G',
       hasFlyout: true,
-      icon: (
+      icon: activeTool === 'gradient' ? (
+        <>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="3 2" />
+        </>
+      ) : (
         <>
           <path d="M19 11l-8-8-8.5 8.5a2.5 2.5 0 000 3.54l3.46 3.46a2.5 2.5 0 003.54 0L17 11" />
           <path d="M19 11v5a2 2 0 01-2 2h-1" />
           <path d="M21 16a2 2 0 11-4 0c0-1.5 2-3 2-3s2 1.5 2 3z" />
         </>
       )
+    },
+    {
+      id: 'dodge',
+      name:
+        activeTool === 'burn'
+          ? 'Burn Tool'
+          : activeTool === 'sponge'
+          ? 'Sponge Tool'
+          : 'Dodge Tool',
+      shortcut: 'O',
+      hasFlyout: true,
+      icon:
+        activeTool === 'burn' ? (
+          <>
+            <path d="M10 4a2 2 0 012 2v2a2 2 0 012-2 2 2 0 012 2v4.5a3.5 3.5 0 01-7 0V6a2 2 0 012-2z" />
+            <path d="M5 14a6 6 0 0012 0v-2H5v2z" />
+          </>
+        ) : activeTool === 'sponge' ? (
+          <>
+            <circle cx="12" cy="12" r="7" strokeDasharray="2 2" />
+            <circle cx="10" cy="10" r="1" />
+            <circle cx="14" cy="11" r="1" />
+            <circle cx="11" cy="14" r="1" />
+          </>
+        ) : (
+          <>
+            <circle cx="12" cy="8" r="5" />
+            <path d="M12 13v8" />
+          </>
+        )
     },
     {
       id: 'text',
@@ -176,9 +213,17 @@ export default function Toolbar({
 
   const handleToolClick = (toolId) => {
     if (toolId === 'marquee') {
-      setActiveTool(activeTool === 'marquee-ellipse' ? 'marquee-ellipse' : 'marquee-rect');
+      setActiveTool(activeTool === 'marquee-ellipse' ? 'marquee-rect' : 'marquee-ellipse');
+    } else if (toolId === 'lasso') {
+      setActiveTool(activeTool === 'polygonal_lasso' ? 'lasso' : 'polygonal_lasso');
+    } else if (toolId === 'bucket') {
+      setActiveTool(activeTool === 'gradient' ? 'bucket' : 'gradient');
+    } else if (toolId === 'dodge') {
+      if (activeTool === 'dodge') setActiveTool('burn');
+      else if (activeTool === 'burn') setActiveTool('sponge');
+      else setActiveTool('dodge');
     } else if (toolId === 'shapes') {
-      setActiveTool(activeTool === 'circle' ? 'circle' : 'rectangle');
+      setActiveTool(activeTool === 'circle' ? 'rectangle' : 'circle');
     } else {
       setActiveTool(toolId);
     }
@@ -191,6 +236,12 @@ export default function Toolbar({
           activeTool === tool.id ||
           (tool.id === 'marquee' &&
             (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee')) ||
+          (tool.id === 'lasso' &&
+            (activeTool === 'lasso' || activeTool === 'polygonal_lasso')) ||
+          (tool.id === 'bucket' &&
+            (activeTool === 'bucket' || activeTool === 'gradient')) ||
+          (tool.id === 'dodge' &&
+            (activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge')) ||
           (tool.id === 'shapes' &&
             (activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'shapes'));
 

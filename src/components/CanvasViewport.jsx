@@ -53,7 +53,24 @@ export default function CanvasViewport({
   fontFamily = 'Arial',
   fontSize = 28,
   fontStyle = 'Regular',
-  textAlign = 'left'
+  textAlign = 'left',
+  // Gradient props
+  foregroundColor = '#000000',
+  backgroundColor = '#ffffff',
+  gradientStyle = 'linear',
+  gradientBlendMode = 'normal',
+  gradientOpacity = 100,
+  gradientReverse = false,
+  // Dodge / Burn / Sponge props
+  dodgeBurnRange = 'midtones',
+  dodgeBurnExposure = 50,
+  spongeMode = 'desaturate',
+  spongeFlow = 50,
+  // Polygonal Lasso props
+  polyPointsCount = 0,
+  setPolyPointsCount,
+  onClosePolygonalLassoRef,
+  onCancelPolygonalLassoRef
 }) {
   const previewCanvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -72,6 +89,20 @@ export default function CanvasViewport({
   // Marquee Drag State
   const isDrawingMarqueeRef = useRef(false);
   const marqueeStartRef = useRef({ x: 0, y: 0 });
+
+  // Freehand Lasso State
+  const isDrawingLassoRef = useRef(false);
+  const lassoPointsRef = useRef([]);
+
+  // Polygonal Lasso State
+  const polyPointsRef = useRef([]);
+
+  // Gradient Drag State
+  const isDrawingGradientRef = useRef(false);
+  const gradientStartRef = useRef({ x: 0, y: 0 });
+
+  // Retouching State (Dodge, Burn, Sponge)
+  const isRetouchingRef = useRef(false);
 
   // Clone Stamp State
   const [cloneAnchor, setCloneAnchor] = useState(null); // { x, y }
@@ -170,7 +201,135 @@ export default function CanvasViewport({
     }
   }, [activeTool, canvasWidth, canvasHeight]);
 
-  // Spacebar hotkey listener for Hand pan
+  // Polygonal Lasso: Close Polygon
+  const closePolygon = useCallback(() => {
+    const pts = polyPointsRef.current;
+    if (pts.length < 3) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    pts.forEach((p) => {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    });
+
+    const pathString = 'M ' + pts[0].x + ' ' + pts[0].y + ' ' + pts.slice(1).map((p) => 'L ' + p.x + ' ' + p.y).join(' ') + ' Z';
+
+    setMarqueeSelection({
+      type: 'path',
+      pathString,
+      x: minX,
+      y: minY,
+      width: Math.max(1, maxX - minX),
+      height: Math.max(1, maxY - minY),
+      inverted: false
+    });
+
+    polyPointsRef.current = [];
+    if (setPolyPointsCount) setPolyPointsCount(0);
+
+    const pCanvas = previewCanvasRef.current;
+    if (pCanvas) {
+      const pCtx = pCanvas.getContext('2d');
+      pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+    }
+  }, [setMarqueeSelection, setPolyPointsCount]);
+
+  // Polygonal Lasso: Cancel
+  const cancelPolygon = useCallback(() => {
+    polyPointsRef.current = [];
+    if (setPolyPointsCount) setPolyPointsCount(0);
+    const pCanvas = previewCanvasRef.current;
+    if (pCanvas) {
+      const pCtx = pCanvas.getContext('2d');
+      pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+    }
+  }, [setPolyPointsCount]);
+
+  // Expose close & cancel to ref callbacks from ToolOptionsBar
+  useEffect(() => {
+    if (onClosePolygonalLassoRef) onClosePolygonalLassoRef.current = closePolygon;
+    if (onCancelPolygonalLassoRef) onCancelPolygonalLassoRef.current = cancelPolygon;
+  });
+
+  // Cancel polygonal lasso if tool switched
+  useEffect(() => {
+    if (activeTool !== 'polygonal_lasso' && polyPointsRef.current.length > 0) {
+      cancelPolygon();
+    }
+  }, [activeTool, cancelPolygon]);
+
+  // Render Polygonal Lasso live preview
+  const renderPolyPreview = useCallback((currentCursor) => {
+    const pCanvas = previewCanvasRef.current;
+    if (!pCanvas) return;
+    const pCtx = pCanvas.getContext('2d');
+    pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+
+    const pts = polyPointsRef.current;
+    if (pts.length === 0) return;
+
+    pCtx.save();
+
+    // 1. Draw existing vertices lines
+    if (pts.length > 1) {
+      pCtx.strokeStyle = '#000000';
+      pCtx.lineWidth = 1.5;
+      pCtx.beginPath();
+      pCtx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        pCtx.lineTo(pts[i].x, pts[i].y);
+      }
+      pCtx.stroke();
+
+      pCtx.strokeStyle = '#ffffff';
+      pCtx.setLineDash([4, 4]);
+      pCtx.stroke();
+      pCtx.setLineDash([]);
+    }
+
+    // 2. Draw rubberband line to currentCursor
+    if (currentCursor) {
+      const lastPt = pts[pts.length - 1];
+      pCtx.strokeStyle = '#000000';
+      pCtx.lineWidth = 1.5;
+      pCtx.beginPath();
+      pCtx.moveTo(lastPt.x, lastPt.y);
+      pCtx.lineTo(currentCursor.x, currentCursor.y);
+      pCtx.stroke();
+
+      pCtx.strokeStyle = '#00e5ff';
+      pCtx.setLineDash([3, 3]);
+      pCtx.stroke();
+      pCtx.setLineDash([]);
+    }
+
+    // 3. Draw anchor vertices (small square boxes)
+    pts.forEach((pt, i) => {
+      pCtx.fillStyle = '#ffffff';
+      pCtx.strokeStyle = '#000000';
+      pCtx.lineWidth = 1;
+      pCtx.fillRect(pt.x - 2.5, pt.y - 2.5, 5, 5);
+      pCtx.strokeRect(pt.x - 2.5, pt.y - 2.5, 5, 5);
+    });
+
+    // 4. If near origin and >= 3 points, highlight origin closing loop
+    if (pts.length >= 3 && currentCursor) {
+      const dist = Math.hypot(currentCursor.x - pts[0].x, currentCursor.y - pts[0].y);
+      if (dist <= 12) {
+        pCtx.strokeStyle = '#ffff00';
+        pCtx.lineWidth = 2;
+        pCtx.beginPath();
+        pCtx.arc(pts[0].x, pts[0].y, 6, 0, Math.PI * 2);
+        pCtx.stroke();
+      }
+    }
+
+    pCtx.restore();
+  }, []);
+
+  // Spacebar hotkey listener for Hand pan and Polygonal Lasso hotkeys
   useEffect(() => {
     const handleKeyDown = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
@@ -179,6 +338,32 @@ export default function CanvasViewport({
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();
         setIsSpacePressed(true);
+        return;
+      }
+
+      if (activeTool === 'polygonal_lasso') {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          closePolygon();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelPolygon();
+          return;
+        }
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+          e.preventDefault();
+          polyPointsRef.current.pop();
+          if (setPolyPointsCount) setPolyPointsCount(polyPointsRef.current.length);
+          if (polyPointsRef.current.length > 0) {
+            renderPolyPreview(lastMousePosRef.current);
+          } else if (previewCanvasRef.current) {
+            const pCanvas = previewCanvasRef.current;
+            pCanvas.getContext('2d').clearRect(0, 0, pCanvas.width, pCanvas.height);
+          }
+          return;
+        }
       }
     };
 
@@ -195,7 +380,7 @@ export default function CanvasViewport({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [activeTool, closePolygon, cancelPolygon, renderPolyPreview, setPolyPointsCount]);
 
   // Wheel listener: Ctrl + Wheel for Smooth Cursor-Centered Zoom
   const handleWheel = (e) => {
@@ -312,6 +497,152 @@ export default function CanvasViewport({
 
     return { imgData, hex };
   }, [layers, layerCanvasesRef]);
+
+  // Retouching (Dodge, Burn, Sponge) Application Helper
+  const applyRetouch = useCallback((x, y) => {
+    const activeCanvas = getActiveCanvas();
+    if (!activeCanvas) return;
+    const ctx = activeCanvas.getContext('2d', { willReadFrequently: true });
+    const radius = Math.max(2, Math.round(brushSize / 2));
+    const minX = Math.max(0, x - radius);
+    const minY = Math.max(0, y - radius);
+    const maxX = Math.min(canvasWidth, x + radius);
+    const maxY = Math.min(canvasHeight, y + radius);
+    const width = maxX - minX;
+    const height = maxY - minY;
+    if (width <= 0 || height <= 0) return;
+
+    const imgData = ctx.getImageData(minX, minY, width, height);
+    const data = imgData.data;
+
+    let selectionPath = null;
+    if (marqueeSelection && marqueeSelection.type === 'path' && marqueeSelection.pathString) {
+      try {
+        selectionPath = new Path2D(marqueeSelection.pathString);
+      } catch (e) {}
+    }
+
+    const currentLayerObj = layers.find((l) => l.id === activeLayerId);
+    const isTransparentLocked = currentLayerObj?.locks?.transparent;
+
+    for (let py = 0; py < height; py++) {
+      const canvasY = minY + py;
+      for (let px = 0; px < width; px++) {
+        const canvasX = minX + px;
+        const distSq = (canvasX - x) * (canvasX - x) + (canvasY - y) * (canvasY - y);
+        if (distSq > radius * radius) continue;
+
+        // Selection boundary check
+        if (marqueeSelection) {
+          if (selectionPath) {
+            if (!ctx.isPointInPath(selectionPath, canvasX, canvasY)) continue;
+          } else {
+            const inX = canvasX >= marqueeSelection.x && canvasX <= marqueeSelection.x + marqueeSelection.width;
+            const inY = canvasY >= marqueeSelection.y && canvasY <= marqueeSelection.y + marqueeSelection.height;
+            const inside = inX && inY;
+            if (marqueeSelection.inverted ? inside : !inside) continue;
+          }
+        }
+
+        const idx = (py * width + px) * 4;
+        const a = data[idx + 3];
+        if (a === 0 && !currentLayerObj?.isBackground) continue;
+        if (isTransparentLocked && a === 0) continue;
+
+        const dist = Math.sqrt(distSq);
+        const falloff = 1 - dist / radius; // 1 at center, 0 at outer edge
+
+        let r = data[idx];
+        let g = data[idx + 1];
+        let b = data[idx + 2];
+
+        if (activeTool === 'dodge' || activeTool === 'burn') {
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          let rangeWeight = 1.0;
+          if (dodgeBurnRange === 'shadows') {
+            rangeWeight = Math.max(0, 1 - lum / 160);
+          } else if (dodgeBurnRange === 'highlights') {
+            rangeWeight = Math.max(0, (lum - 95) / 160);
+          } else {
+            // Midtones
+            rangeWeight = Math.max(0, 1 - Math.abs(lum - 128) / 128);
+          }
+
+          const strength = (dodgeBurnExposure / 100) * falloff * rangeWeight * 0.25;
+
+          if (activeTool === 'dodge') {
+            r = Math.min(255, r + (255 - r) * strength);
+            g = Math.min(255, g + (255 - g) * strength);
+            b = Math.min(255, b + (255 - b) * strength);
+          } else {
+            r = Math.max(0, r - r * strength);
+            g = Math.max(0, g - g * strength);
+            b = Math.max(0, b - b * strength);
+          }
+        } else if (activeTool === 'sponge') {
+          const strength = (spongeFlow / 100) * falloff * 0.25;
+          const rn = r / 255, gn = g / 255, bn = b / 255;
+          const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+          let h = 0, s = 0, l = (max + min) / 2;
+
+          if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+              case rn: h = (gn - bn) / d + (gn < bn ? 6 : 0); break;
+              case gn: h = (bn - rn) / d + 2; break;
+              case bn: h = (rn - gn) / d + 4; break;
+            }
+            h /= 6;
+          }
+
+          if (spongeMode === 'saturate') {
+            s = Math.min(1, s + strength);
+          } else {
+            s = Math.max(0, s - strength);
+          }
+
+          const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+          };
+
+          if (s === 0) {
+            r = g = b = Math.round(l * 255);
+          } else {
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = Math.round(hue2rgb(p, q, h + 1 / 3) * 255);
+            g = Math.round(hue2rgb(p, q, h) * 255);
+            b = Math.round(hue2rgb(p, q, h - 1 / 3) * 255);
+          }
+        }
+
+        data[idx] = Math.round(r);
+        data[idx + 1] = Math.round(g);
+        data[idx + 2] = Math.round(b);
+      }
+    }
+
+    ctx.putImageData(imgData, minX, minY);
+  }, [
+    getActiveCanvas,
+    brushSize,
+    canvasWidth,
+    canvasHeight,
+    marqueeSelection,
+    activeTool,
+    dodgeBurnRange,
+    dodgeBurnExposure,
+    spongeMode,
+    spongeFlow,
+    layers,
+    activeLayerId
+  ]);
 
   // Move Tool Hit-Testing for Auto-Select: Layer
   const hitTestLayer = useCallback((x, y) => {
@@ -548,13 +879,58 @@ export default function CanvasViewport({
       return;
     }
 
-    // 4. CLONE STAMP TOOL ('clone' / 'S')
+    // 4. FREEHAND LASSO TOOL ('lasso')
+    if (activeTool === 'lasso') {
+      isDrawingLassoRef.current = true;
+      lassoPointsRef.current = [coords];
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
+
+    // 5. POLYGONAL LASSO TOOL ('polygonal_lasso')
+    if (activeTool === 'polygonal_lasso') {
+      const pts = polyPointsRef.current;
+      if (pts.length >= 3) {
+        const p0 = pts[0];
+        const dist = Math.hypot(coords.x - p0.x, coords.y - p0.y);
+        if (dist <= 12) {
+          closePolygon();
+          return;
+        }
+      }
+      pts.push(coords);
+      polyPointsRef.current = pts;
+      if (setPolyPointsCount) setPolyPointsCount(pts.length);
+      renderPolyPreview(coords);
+      return;
+    }
+
+    // 6. GRADIENT TOOL ('gradient' / 'G')
+    if (activeTool === 'gradient') {
+      isDrawingGradientRef.current = true;
+      gradientStartRef.current = coords;
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
+
+    // 7. DODGE, BURN, SPONGE TOOLS ('dodge', 'burn', 'sponge' / 'O')
+    if (activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge') {
+      isRetouchingRef.current = true;
+      applyRetouch(coords.x, coords.y);
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
+
+    // 8. CLONE STAMP TOOL ('clone' / 'S')
     if (activeTool === 'clone') {
       if (e.altKey) {
-        // Alt-click sets source anchor coordinate
         setCloneAnchor({ x: coords.x, y: coords.y });
-
-        // Capture source canvas
         const sourceCanvas = cloneSampleMode === 'all'
           ? (() => {
               const comp = document.createElement('canvas');
@@ -608,7 +984,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // 5. ZOOM TOOL
+    // 9. ZOOM TOOL
     if (activeTool === 'zoom') {
       if (e.altKey) {
         setZoom((z) => Math.max(10, Math.round(z / 1.25)));
@@ -618,8 +994,8 @@ export default function CanvasViewport({
       return;
     }
 
-    // 6. MARQUEE SELECTION TOOLS
-    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee' || activeTool === 'lasso') {
+    // 10. MARQUEE RECT / ELLIPSE SELECTION TOOLS
+    if (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee') {
       isDrawingMarqueeRef.current = true;
       marqueeStartRef.current = coords;
       setMarqueeSelection({
@@ -636,7 +1012,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // 7. TEXT TOOL: check if existing text layer clicked, or create new
+    // 11. TEXT TOOL
     if (activeTool === 'text') {
       const hit = hitTestLayer(coords.x, coords.y);
       if (hit && hit.type === 'text' && hit.textData) {
@@ -673,7 +1049,7 @@ export default function CanvasViewport({
       setTextConfig(null);
     }
 
-    // 8. SHAPES TOOL
+    // 12. SHAPES TOOL
     if (activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') {
       isDrawingShapeRef.current = true;
       shapeStartRef.current = coords;
@@ -683,7 +1059,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // 9. PAINT BUCKET
+    // 13. PAINT BUCKET
     if (activeTool === 'bucket') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -706,7 +1082,7 @@ export default function CanvasViewport({
       return;
     }
 
-    // 10. BRUSH & ERASER
+    // 14. BRUSH & ERASER
     if (activeTool === 'brush' || activeTool === 'eraser') {
       const activeCanvas = getActiveCanvas();
       if (!activeCanvas) return;
@@ -773,6 +1149,86 @@ export default function CanvasViewport({
       });
     } else if (eyedropperData) {
       setEyedropperData(null);
+    }
+
+    // Polygonal Lasso Live Rubberband Preview
+    if (activeTool === 'polygonal_lasso' && polyPointsRef.current.length > 0) {
+      renderPolyPreview(coords);
+      return;
+    }
+
+    // Freehand Lasso Dragging
+    if (isDrawingLassoRef.current && activeTool === 'lasso') {
+      lassoPointsRef.current.push(coords);
+      const pCanvas = previewCanvasRef.current;
+      if (pCanvas) {
+        const pCtx = pCanvas.getContext('2d');
+        pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+        pCtx.save();
+        pCtx.strokeStyle = '#000000';
+        pCtx.lineWidth = 1.5;
+        pCtx.beginPath();
+        pCtx.moveTo(lassoPointsRef.current[0].x, lassoPointsRef.current[0].y);
+        for (let i = 1; i < lassoPointsRef.current.length; i++) {
+          pCtx.lineTo(lassoPointsRef.current[i].x, lassoPointsRef.current[i].y);
+        }
+        pCtx.stroke();
+        pCtx.strokeStyle = '#ffffff';
+        pCtx.setLineDash([4, 4]);
+        pCtx.stroke();
+        pCtx.restore();
+      }
+      return;
+    }
+
+    // Live Gradient Vector Dragging Preview
+    if (isDrawingGradientRef.current && activeTool === 'gradient') {
+      const pCanvas = previewCanvasRef.current;
+      if (pCanvas) {
+        const pCtx = pCanvas.getContext('2d');
+        pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+        const start = gradientStartRef.current;
+
+        pCtx.save();
+        // Outer dark contrast line
+        pCtx.strokeStyle = 'rgba(0,0,0,0.8)';
+        pCtx.lineWidth = 3;
+        pCtx.beginPath();
+        pCtx.moveTo(start.x, start.y);
+        pCtx.lineTo(coords.x, coords.y);
+        pCtx.stroke();
+
+        // Inner blue vector line
+        pCtx.strokeStyle = '#1473e6';
+        pCtx.lineWidth = 1.5;
+        pCtx.beginPath();
+        pCtx.moveTo(start.x, start.y);
+        pCtx.lineTo(coords.x, coords.y);
+        pCtx.stroke();
+
+        // Start anchor circle
+        pCtx.fillStyle = '#ffffff';
+        pCtx.strokeStyle = '#1473e6';
+        pCtx.lineWidth = 1.5;
+        pCtx.beginPath();
+        pCtx.arc(start.x, start.y, 4, 0, Math.PI * 2);
+        pCtx.fill();
+        pCtx.stroke();
+
+        // End anchor circle
+        pCtx.beginPath();
+        pCtx.arc(coords.x, coords.y, 4, 0, Math.PI * 2);
+        pCtx.fill();
+        pCtx.stroke();
+        pCtx.restore();
+      }
+      return;
+    }
+
+    // Retouching Stroke (Dodge, Burn, Sponge)
+    if (isRetouchingRef.current && (activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge')) {
+      applyRetouch(coords.x, coords.y);
+      return;
     }
 
     // Marquee Dragging with Shift 1:1 Aspect Ratio constraint
@@ -874,6 +1330,100 @@ export default function CanvasViewport({
       return;
     }
 
+    // Finish Freehand Lasso
+    if (isDrawingLassoRef.current && activeTool === 'lasso') {
+      isDrawingLassoRef.current = false;
+      const pts = lassoPointsRef.current;
+      const pCanvas = previewCanvasRef.current;
+      if (pCanvas) {
+        pCanvas.getContext('2d').clearRect(0, 0, pCanvas.width, pCanvas.height);
+      }
+
+      if (pts.length >= 3) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        pts.forEach((p) => {
+          minX = Math.min(minX, p.x);
+          maxX = Math.max(maxX, p.x);
+          minY = Math.min(minY, p.y);
+          maxY = Math.max(maxY, p.y);
+        });
+
+        const pathString = 'M ' + pts[0].x + ' ' + pts[0].y + ' ' + pts.slice(1).map((p) => 'L ' + p.x + ' ' + p.y).join(' ') + ' Z';
+        setMarqueeSelection({
+          type: 'path',
+          pathString,
+          x: minX,
+          y: minY,
+          width: Math.max(1, maxX - minX),
+          height: Math.max(1, maxY - minY),
+          inverted: false
+        });
+      }
+      lassoPointsRef.current = [];
+      return;
+    }
+
+    // Finish Gradient Tool Drag
+    if (isDrawingGradientRef.current && activeTool === 'gradient') {
+      isDrawingGradientRef.current = false;
+      const pCanvas = previewCanvasRef.current;
+      if (pCanvas) {
+        pCanvas.getContext('2d').clearRect(0, 0, pCanvas.width, pCanvas.height);
+      }
+
+      const coords = getCanvasCoords(e);
+      const p1 = gradientStartRef.current;
+      const p2 = coords;
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+      if (dist >= 2) {
+        const activeCanvas = getActiveCanvas();
+        if (activeCanvas) {
+          const ctx = activeCanvas.getContext('2d');
+          ctx.save();
+          applyMarqueeClip(ctx);
+
+          const currentLayerObj = layers.find((l) => l.id === activeLayerId);
+          if (currentLayerObj?.locks?.transparent) {
+            ctx.globalCompositeOperation = 'source-atop';
+          } else {
+            ctx.globalCompositeOperation = getCompositeOperation(gradientBlendMode);
+          }
+          ctx.globalAlpha = gradientOpacity / 100;
+
+          let grad;
+          if (gradientStyle === 'radial') {
+            grad = ctx.createRadialGradient(p1.x, p1.y, 0, p1.x, p1.y, Math.max(1, dist));
+          } else {
+            grad = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
+          }
+
+          const c1 = gradientReverse ? backgroundColor : foregroundColor;
+          const c2 = gradientReverse ? foregroundColor : backgroundColor;
+          grad.addColorStop(0, c1);
+          grad.addColorStop(1, c2);
+
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          if (marqueeSelection) ctx.restore();
+          ctx.restore();
+
+          refreshClippingMasks();
+          pushSnapshot({}, 'Gradient Fill', 'gradient');
+        }
+      }
+      return;
+    }
+
+    // Finish Retouching (Dodge, Burn, Sponge)
+    if (isRetouchingRef.current && (activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge')) {
+      isRetouchingRef.current = false;
+      refreshClippingMasks();
+      const actionLabel = activeTool === 'dodge' ? 'Dodge Tool' : activeTool === 'burn' ? 'Burn Tool' : 'Sponge Tool';
+      pushSnapshot({}, actionLabel, activeTool);
+      return;
+    }
+
     // Finish Marquee Drag
     if (isDrawingMarqueeRef.current) {
       isDrawingMarqueeRef.current = false;
@@ -952,8 +1502,13 @@ export default function CanvasViewport({
     }
   };
 
-  // Double Click handler (Move Tool double-click opens Text Editor)
+  // Double Click handler (Move Tool double-click opens Text Editor; Polygonal Lasso closes)
   const handleDoubleClick = (e) => {
+    if (activeTool === 'polygonal_lasso') {
+      closePolygon();
+      return;
+    }
+
     if (activeTool === 'select') {
       const coords = getCanvasCoords(e);
       const hit = hitTestLayer(coords.x, coords.y);
@@ -1060,6 +1615,7 @@ export default function CanvasViewport({
       case 'marquee-rect':
       case 'marquee-ellipse':
       case 'lasso':
+      case 'polygonal_lasso':
       case 'crop':
       case 'brush':
       case 'eraser':
@@ -1069,6 +1625,10 @@ export default function CanvasViewport({
       case 'clone':
       case 'eyedropper':
       case 'magic_wand':
+      case 'gradient':
+      case 'dodge':
+      case 'burn':
+      case 'sponge':
         return 'cursor-crosshair';
       case 'text':
         return 'cursor-text';
@@ -1164,7 +1724,7 @@ export default function CanvasViewport({
             />
           ))}
 
-          {/* Live Preview Canvas for shapes and feedback */}
+          {/* Live Preview Canvas for shapes, selections, gradients, and feedback */}
           <canvas
             ref={previewCanvasRef}
             width={canvasWidth}

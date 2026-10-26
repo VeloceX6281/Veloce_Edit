@@ -40,7 +40,13 @@ export default function Header({
   onDeselect,
   onInvertMarquee,
   onFreeTransform,
-  documentName = 'Untitled-1.psd'
+  documentName = 'Untitled-1.psd',
+  // Tonal Adjustments props
+  onOpenLevels,
+  onOpenCurves,
+  onOpenHueSat,
+  onOpenColorBalance,
+  onDesaturate
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -123,10 +129,21 @@ export default function Header({
       children: [
         { label: 'Mode: RGB Color (8 Bit)', disabled: true, checked: true },
         { divider: true },
+        {
+          label: 'Adjustments',
+          submenu: [
+            { label: 'Levels...', shortcut: 'Ctrl+L', action: onOpenLevels },
+            { label: 'Curves...', shortcut: 'Ctrl+M', action: onOpenCurves },
+            { label: 'Hue/Saturation...', shortcut: 'Ctrl+U', action: onOpenHueSat },
+            { label: 'Color Balance...', shortcut: 'Ctrl+B', action: onOpenColorBalance },
+            { divider: true },
+            { label: 'Desaturate', shortcut: 'Shift+Ctrl+U', action: onDesaturate }
+          ]
+        },
+        { divider: true },
         { label: 'Image Size...', shortcut: 'Alt+Ctrl+I', action: onOpenImageSize },
         { label: 'Canvas Size...', shortcut: 'Alt+Ctrl+C', action: onOpenCanvasSize },
         { divider: true },
-        { label: 'Adjustments (Right Panel)', shortcut: 'F8', action: () => {} },
         { label: 'Invert Colors', shortcut: 'Ctrl+I', action: () => {} }
       ]
     },
@@ -198,9 +215,12 @@ export default function Header({
       children: [
         { label: 'Last Filter (Live)', shortcut: 'Ctrl+F', action: () => {} },
         { divider: true },
-        { label: 'Brightness & Contrast...', action: () => {} },
-        { label: 'Invert / Negative', shortcut: 'Ctrl+I', action: () => {} },
-        { label: 'Grayscale / Desaturate', shortcut: 'Shift+Ctrl+U', action: () => {} }
+        { label: 'Levels...', shortcut: 'Ctrl+L', action: onOpenLevels },
+        { label: 'Curves...', shortcut: 'Ctrl+M', action: onOpenCurves },
+        { label: 'Hue/Saturation...', shortcut: 'Ctrl+U', action: onOpenHueSat },
+        { label: 'Color Balance...', shortcut: 'Ctrl+B', action: onOpenColorBalance },
+        { divider: true },
+        { label: 'Grayscale / Desaturate', shortcut: 'Shift+Ctrl+U', action: onDesaturate }
       ]
     },
     {
@@ -237,7 +257,7 @@ export default function Header({
           label: 'Keyboard Shortcuts Cheatsheet',
           action: () =>
             alert(
-              'V: Move\nM: Marquee\nL: Lasso\nW: Magic Wand\nC: Crop\nI: Eyedropper\nB: Brush\nS: Clone Stamp\nE: Eraser\nG: Paint Bucket\nT: Text\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+Alt+G: Clipping Mask\nCtrl+E: Merge Down\nCtrl+T: Free Transform\nCtrl+Z: Undo\nCtrl+Y: Redo\nCtrl+D: Deselect'
+              'V: Move\nM: Marquee\nL: Lasso / Polygonal Lasso\nW: Magic Wand\nC: Crop\nI: Eyedropper\nB: Brush\nS: Clone Stamp\nE: Eraser\nG: Gradient / Paint Bucket\nO: Dodge / Burn / Sponge\nT: Text\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+L: Levels\nCtrl+M: Curves\nCtrl+U: Hue/Saturation\nCtrl+B: Color Balance\nShift+Ctrl+U: Desaturate\nCtrl+Alt+G: Clipping Mask\nCtrl+E: Merge Down\nCtrl+T: Free Transform\nCtrl+Z: Undo\nCtrl+Y: Redo\nCtrl+D: Deselect'
             )
         }
       ]
