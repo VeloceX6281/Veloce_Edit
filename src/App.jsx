@@ -933,11 +933,71 @@ export default function App() {
     setIsImportModalOpen(true);
   }, []);
 
-  // Image Import Option A: Insert as New Layer
-  const handleInsertAsNewLayer = useCallback(() => {
-    if (!pendingImageMeta) return;
+  // Image Import: Open as Project with Auto-Fit Zoom
+  const handleOpenAsProject = useCallback((canvas, imgWidth, imgHeight, fileName) => {
+    const src = canvas || pendingImageMeta?.canvas || pendingImageMeta?.imgElement;
+    const w = imgWidth || pendingImageMeta?.width || src?.naturalWidth || src?.width || 800;
+    const h = imgHeight || pendingImageMeta?.height || src?.naturalHeight || src?.height || 500;
+    const rawName = fileName || pendingImageMeta?.name || 'Untitled-1.psd';
+    const cleanName = rawName.replace(/\.[^/.]+$/, '');
 
-    const cleanName = pendingImageMeta.name.replace(/\.[^/.]+$/, '');
+    // 1. Set canvasWidth = imgWidth and canvasHeight = imgHeight
+    setCanvasWidth(w);
+    setCanvasHeight(h);
+
+    // 2. Reset pan to center: setPan({ x: 0, y: 0 })
+    setPan({ x: 0, y: 0 });
+
+    // 3. Automatically calculate and set the zoom level to fit the viewport:
+    const availableWidth = window.innerWidth - 340; // account for sidebar & toolbar
+    const availableHeight = window.innerHeight - 120; // account for header & bars
+    const scaleX = availableWidth / w;
+    const scaleY = availableHeight / h;
+    const fitZoom = Math.min(scaleX, scaleY, 1.0); // fit within viewport
+    setZoom(Math.max(10, Math.round(fitZoom * 100)));
+
+    // 4. Create initial background layer
+    const bgLayer = createInitialBackgroundLayer();
+    bgLayer.name = cleanName;
+    const newLayers = [bgLayer];
+
+    setLayers(newLayers);
+    setActiveLayerId(bgLayer.id);
+    setMarqueeSelection(null);
+    setIsImportModalOpen(false);
+
+    setTimeout(() => {
+      const destCanvas = layerCanvasesRef.current[bgLayer.id];
+      if (destCanvas) {
+        destCanvas.width = w;
+        destCanvas.height = h;
+        const ctx = destCanvas.getContext('2d');
+        if (src) {
+          ctx.drawImage(src, 0, 0, w, h);
+        }
+      }
+      pushSnapshot(
+        {
+          layers: newLayers,
+          activeLayerId: bgLayer.id,
+          canvasWidth: w,
+          canvasHeight: h
+        },
+        'Open Image Project',
+        'image'
+      );
+      if (pendingImageMeta?.objectUrl) {
+        URL.revokeObjectURL(pendingImageMeta.objectUrl);
+      }
+      setPendingImageMeta(null);
+    }, 50);
+  }, [pendingImageMeta, pushSnapshot]);
+
+  // Image Import: Insert as New Layer
+  const handleInsertAsLayer = useCallback((canvas, imgWidth, imgHeight, fileName) => {
+    const src = canvas || pendingImageMeta?.canvas || pendingImageMeta?.imgElement;
+    const rawName = fileName || pendingImageMeta?.name || 'Imported Layer';
+    const cleanName = rawName.replace(/\.[^/.]+$/, '');
     const newLayer = createNewLayer(cleanName);
     const newLayers = [...layers, newLayer];
 
@@ -945,67 +1005,35 @@ export default function App() {
     setActiveLayerId(newLayer.id);
     setIsImportModalOpen(false);
 
+    const w = imgWidth || pendingImageMeta?.width || src?.naturalWidth || src?.width || canvasWidth;
+    const h = imgHeight || pendingImageMeta?.height || src?.naturalHeight || src?.height || canvasHeight;
+
     setTimeout(() => {
-      const canvas = layerCanvasesRef.current[newLayer.id];
-      if (canvas && pendingImageMeta.imgElement) {
-        const ctx = canvas.getContext('2d');
-        const img = pendingImageMeta.imgElement;
+      const destCanvas = layerCanvasesRef.current[newLayer.id];
+      if (destCanvas && src) {
+        const ctx = destCanvas.getContext('2d');
+        const scale = Math.min(canvasWidth / w, canvasHeight / h, 1.0);
+        const drawW = Math.round(w * scale);
+        const drawH = Math.round(h * scale);
+        const drawX = Math.round((canvasWidth - drawW) / 2);
+        const drawY = Math.round((canvasHeight - drawH) / 2);
 
-        const scale = Math.min(canvasWidth / img.width, canvasHeight / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        const x = (canvasWidth - w) / 2;
-        const y = (canvasHeight - h) / 2;
-
-        ctx.drawImage(img, x, y, w, h);
+        ctx.drawImage(src, 0, 0, w, h, drawX, drawY, drawW, drawH);
       }
       pushSnapshot(
         { layers: newLayers, activeLayerId: newLayer.id },
         'Import Image Layer',
         'image'
       );
+      if (pendingImageMeta?.objectUrl) {
+        URL.revokeObjectURL(pendingImageMeta.objectUrl);
+      }
       setPendingImageMeta(null);
     }, 50);
   }, [pendingImageMeta, layers, canvasWidth, canvasHeight, pushSnapshot]);
 
-  // Image Import Option B: Open as New Project
-  const handleOpenAsNewProject = useCallback(() => {
-    if (!pendingImageMeta) return;
-
-    const newW = pendingImageMeta.width;
-    const newH = pendingImageMeta.height;
-
-    setCanvasWidth(newW);
-    setCanvasHeight(newH);
-
-    const bgLayer = createInitialBackgroundLayer();
-    const newLayers = [bgLayer];
-
-    setLayers(newLayers);
-    setActiveLayerId(bgLayer.id);
-    setIsImportModalOpen(false);
-
-    handleFitToScreen();
-
-    setTimeout(() => {
-      const canvas = layerCanvasesRef.current[bgLayer.id];
-      if (canvas && pendingImageMeta.imgElement) {
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(pendingImageMeta.imgElement, 0, 0, newW, newH);
-      }
-      pushSnapshot(
-        {
-          layers: newLayers,
-          activeLayerId: bgLayer.id,
-          canvasWidth: newW,
-          canvasHeight: newH
-        },
-        'Open Image Project',
-        'image'
-      );
-      setPendingImageMeta(null);
-    }, 50);
-  }, [pendingImageMeta, handleFitToScreen, pushSnapshot]);
+  const handleOpenAsNewProject = handleOpenAsProject;
+  const handleInsertAsNewLayer = handleInsertAsLayer;
 
   // Apply Adjustments to Active Layer
   const handleApplyAdjustments = useCallback(() => {
@@ -2150,6 +2178,7 @@ export default function App() {
           showPixelGrid={showPixelGrid}
           snapEnabled={snapEnabled}
           lockGuides={lockGuides}
+          onOpenImportModal={handleOpenImportModal}
         />
 
         {/* Pure Canvas Mode Escape Pill Banner */}
@@ -2236,9 +2265,14 @@ export default function App() {
         imageMeta={pendingImageMeta}
         canvasWidth={canvasWidth}
         canvasHeight={canvasHeight}
-        onInsertAsNewLayer={handleInsertAsNewLayer}
-        onOpenAsNewProject={handleOpenAsNewProject}
+        onInsertAsLayer={handleInsertAsLayer}
+        onOpenAsProject={handleOpenAsProject}
+        onInsertAsNewLayer={handleInsertAsLayer}
+        onOpenAsNewProject={handleOpenAsProject}
         onCancel={() => {
+          if (pendingImageMeta?.objectUrl) {
+            URL.revokeObjectURL(pendingImageMeta.objectUrl);
+          }
           setIsImportModalOpen(false);
           setPendingImageMeta(null);
         }}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function ImportImageModal({
   isOpen,
@@ -7,9 +7,102 @@ export default function ImportImageModal({
   canvasHeight,
   onInsertAsNewLayer,
   onOpenAsNewProject,
+  onInsertAsLayer,
+  onOpenAsProject,
   onCancel
 }) {
+  const [previewSrc, setPreviewSrc] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    if (!imageMeta) {
+      setPreviewSrc('');
+      return;
+    }
+
+    if (imageMeta.objectUrl) {
+      setPreviewSrc(imageMeta.objectUrl);
+    } else if (imageMeta.dataUrl) {
+      setPreviewSrc(imageMeta.dataUrl);
+    } else if (imageMeta.file) {
+      const url = URL.createObjectURL(imageMeta.file);
+      setPreviewSrc(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
+  }, [imageMeta]);
+
   if (!isOpen || !imageMeta) return null;
+
+  const handleAction = (mode) => {
+    setIsProcessing(true);
+
+    const file = imageMeta.file;
+    const fileName = imageMeta.name || file?.name || 'Imported Image';
+
+    if (file) {
+      const img = new Image();
+      img.onload = () => {
+        const offscreen = document.createElement('canvas');
+        const imgWidth = img.naturalWidth || img.width;
+        const imgHeight = img.naturalHeight || img.height;
+        offscreen.width = imgWidth;
+        offscreen.height = imgHeight;
+        const ctx = offscreen.getContext('2d');
+        // Fill clean white background first for opaque images, then draw:
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(img.src);
+
+        setIsProcessing(false);
+        if (mode === 'project') {
+          if (onOpenAsProject) {
+            onOpenAsProject(offscreen, imgWidth, imgHeight, fileName);
+          } else if (onOpenAsNewProject) {
+            onOpenAsNewProject(offscreen, imgWidth, imgHeight, fileName);
+          }
+        } else {
+          if (onInsertAsLayer) {
+            onInsertAsLayer(offscreen, imgWidth, imgHeight, fileName);
+          } else if (onInsertAsNewLayer) {
+            onInsertAsNewLayer(offscreen, imgWidth, imgHeight, fileName);
+          }
+        }
+      };
+      img.onerror = () => {
+        setIsProcessing(false);
+        alert('Failed to decode image file.');
+      };
+      img.src = URL.createObjectURL(file);
+    } else {
+      const src = imageMeta.canvas || imageMeta.imgElement;
+      const imgWidth = imageMeta.width || src?.naturalWidth || src?.width || canvasWidth;
+      const imgHeight = imageMeta.height || src?.naturalHeight || src?.height || canvasHeight;
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = imgWidth;
+      offscreen.height = imgHeight;
+      const ctx = offscreen.getContext('2d');
+      if (src) {
+        ctx.drawImage(src, 0, 0, imgWidth, imgHeight);
+      }
+
+      setIsProcessing(false);
+      if (mode === 'project') {
+        if (onOpenAsProject) {
+          onOpenAsProject(offscreen, imgWidth, imgHeight, fileName);
+        } else if (onOpenAsNewProject) {
+          onOpenAsNewProject(offscreen, imgWidth, imgHeight, fileName);
+        }
+      } else {
+        if (onInsertAsLayer) {
+          onInsertAsLayer(offscreen, imgWidth, imgHeight, fileName);
+        } else if (onInsertAsNewLayer) {
+          onInsertAsNewLayer(offscreen, imgWidth, imgHeight, fileName);
+        }
+      }
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 select-none animate-in fade-in duration-150 font-sans">
@@ -27,7 +120,8 @@ export default function ImportImageModal({
           </div>
           <button
             onClick={onCancel}
-            className="w-6 h-6 rounded-[2px] text-zinc-400 hover:text-white hover:bg-[#383838] flex items-center justify-center transition"
+            disabled={isProcessing}
+            className="w-6 h-6 rounded-[2px] text-zinc-400 hover:text-white hover:bg-[#383838] flex items-center justify-center transition disabled:opacity-50"
           >
             ✕
           </button>
@@ -35,12 +129,21 @@ export default function ImportImageModal({
 
         {/* Image Preview & Meta Card */}
         <div className="flex items-center gap-4 p-2.5 bg-[#202020] rounded-[2px] border border-[#383838]">
-          <div className="w-16 h-16 rounded-[2px] bg-[#181818] border border-[#383838] overflow-hidden flex items-center justify-center flex-shrink-0">
-            <img
-              src={imageMeta.dataUrl}
-              alt="Preview"
-              className="max-w-full max-h-full object-contain"
-            />
+          <div className="w-16 h-16 rounded-[2px] bg-[#181818] border border-[#383838] overflow-hidden flex items-center justify-center flex-shrink-0 relative">
+            {previewSrc ? (
+              <img
+                src={previewSrc}
+                alt="Preview"
+                className="max-w-full max-h-full object-contain"
+              />
+            ) : (
+              <span className="text-zinc-600 text-xs">...</span>
+            )}
+            {isProcessing && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                <div className="w-4 h-4 border-2 border-[#1473e6] border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1 min-w-0 flex-1 text-xs">
             <span className="font-medium text-zinc-200 truncate">{imageMeta.name}</span>
@@ -63,8 +166,9 @@ export default function ImportImageModal({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Option A: Insert as New Layer */}
           <button
-            onClick={onInsertAsNewLayer}
-            className="p-3.5 rounded-[2px] border border-[#383838] bg-[#222] hover:bg-[#2e2e2e] hover:border-[#1473e6] flex flex-col gap-2 text-left transition group cursor-pointer"
+            onClick={() => handleAction('layer')}
+            disabled={isProcessing}
+            className="p-3.5 rounded-[2px] border border-[#383838] bg-[#222] hover:bg-[#2e2e2e] hover:border-[#1473e6] flex flex-col gap-2 text-left transition group cursor-pointer disabled:opacity-50"
           >
             <div className="w-7 h-7 rounded-[2px] bg-[#333] flex items-center justify-center text-zinc-300 group-hover:bg-[#1473e6] group-hover:text-white transition">
               <svg className="w-4 h-4 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
@@ -83,8 +187,9 @@ export default function ImportImageModal({
 
           {/* Option B: Open as New Project */}
           <button
-            onClick={onOpenAsNewProject}
-            className="p-3.5 rounded-[2px] border border-[#383838] bg-[#222] hover:bg-[#2e2e2e] hover:border-[#1473e6] flex flex-col gap-2 text-left transition group cursor-pointer"
+            onClick={() => handleAction('project')}
+            disabled={isProcessing}
+            className="p-3.5 rounded-[2px] border border-[#383838] bg-[#222] hover:bg-[#2e2e2e] hover:border-[#1473e6] flex flex-col gap-2 text-left transition group cursor-pointer disabled:opacity-50"
           >
             <div className="w-7 h-7 rounded-[2px] bg-[#333] flex items-center justify-center text-zinc-300 group-hover:bg-[#1473e6] group-hover:text-white transition">
               <svg className="w-4 h-4 fill-none stroke-currentColor stroke-2" viewBox="0 0 24 24">
@@ -96,7 +201,7 @@ export default function ImportImageModal({
                 Open as New Document
               </span>
               <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
-                Match document artboard dimensions ({imageMeta.width}×{imageMeta.height} px) to image.
+                Match document artboard dimensions ({imageMeta.width}×{imageMeta.height} px) with auto-fit zoom.
               </p>
             </div>
           </button>
@@ -106,7 +211,8 @@ export default function ImportImageModal({
         <div className="flex justify-end pt-2 border-t border-[#383838]">
           <button
             onClick={onCancel}
-            className="px-4 py-1 rounded-[2px] text-xs text-zinc-300 hover:text-white hover:bg-[#383838] border border-[#383838] transition"
+            disabled={isProcessing}
+            className="px-4 py-1 rounded-[2px] text-xs text-zinc-300 hover:text-white hover:bg-[#383838] border border-[#383838] transition disabled:opacity-50"
           >
             Cancel
           </button>

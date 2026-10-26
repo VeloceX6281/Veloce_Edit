@@ -84,27 +84,29 @@ export default function Header({
     return () => window.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  // File chosen via input
+  // File chosen via input (supports 4K/5K high-res images without memory limits)
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target.result;
-      const img = new Image();
-      img.onload = () => {
-        onOpenImportModal({
-          name: file.name,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-          dataUrl,
-          imgElement: img
-        });
-      };
-      img.src = dataUrl;
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      onOpenImportModal({
+        file,
+        name: file.name,
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+        objectUrl,
+        dataUrl: objectUrl,
+        imgElement: img
+      });
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      alert('Failed to load image file.');
+    };
+    img.src = objectUrl;
     e.target.value = '';
   };
 

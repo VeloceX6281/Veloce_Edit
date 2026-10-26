@@ -77,7 +77,8 @@ export default function CanvasViewport({
   quickMaskCanvasRef,
   showPixelGrid = false,
   snapEnabled = true,
-  lockGuides = false
+  lockGuides = false,
+  onOpenImportModal
 }) {
   const previewCanvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -400,6 +401,37 @@ export default function CanvasViewport({
       });
     } else if (e.shiftKey) {
       setPan((prev) => ({ ...prev, x: prev.x - e.deltaY }));
+    }
+  };
+
+  // Drag & drop support for local image importing
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/') && onOpenImportModal) {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        onOpenImportModal({
+          file,
+          name: file.name,
+          width: img.naturalWidth || img.width,
+          height: img.naturalHeight || img.height,
+          objectUrl,
+          dataUrl: objectUrl,
+          imgElement: img
+        });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+      };
+      img.src = objectUrl;
     }
   };
 
@@ -1850,6 +1882,8 @@ export default function CanvasViewport({
       <main
         ref={containerRef}
         onWheel={handleWheel}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         className="flex-1 bg-[#1e1e1e] relative overflow-hidden flex items-center justify-center p-8 select-none"
       >
         {/* Pixel Rulers (Framing Top & Left Viewport) */}
@@ -1867,24 +1901,25 @@ export default function CanvasViewport({
           lockGuides={lockGuides}
         />
 
-        {/* Artboard Container with Authentic Photoshop Drop Shadow & Dark Checkerboard */}
+        {/* Artboard Container with Distinct 1px Border, Authentic Drop Shadow & Checkerboard Beneath Layers */}
         <div
-          className="relative bg-[#232323] overflow-hidden transition-transform duration-75 origin-center"
+          className="relative bg-[#202020] overflow-hidden transition-transform duration-75 origin-center border border-[#383838]"
           style={{
             width: `${canvasWidth}px`,
             height: `${canvasHeight}px`,
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`,
-            boxShadow: '0 0 25px rgba(0,0,0,0.65), 0 0 0 1px #333333'
+            boxShadow: '0 10px 32px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.5)'
           }}
         >
-          {/* Authentic Dark Transparency Checkerboard */}
+          {/* Authentic Dark Transparency Checkerboard beneath all layers */}
           <div
-            className="absolute inset-0 bg-[#232323]"
+            className="absolute inset-0 pointer-events-none"
             style={{
-              backgroundImage: `linear-gradient(45deg, #181818 25%, transparent 25%), 
-                                linear-gradient(-45deg, #181818 25%, transparent 25%), 
-                                linear-gradient(45deg, transparent 75%, #181818 75%), 
-                                linear-gradient(-45deg, transparent 75%, #181818 75%)`,
+              backgroundColor: '#202020',
+              backgroundImage: `linear-gradient(45deg, #2c2c2c 25%, transparent 25%), 
+                                linear-gradient(-45deg, #2c2c2c 25%, transparent 25%), 
+                                linear-gradient(45deg, transparent 75%, #2c2c2c 75%), 
+                                linear-gradient(-45deg, transparent 75%, #2c2c2c 75%)`,
               backgroundSize: '16px 16px',
               backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px'
             }}
