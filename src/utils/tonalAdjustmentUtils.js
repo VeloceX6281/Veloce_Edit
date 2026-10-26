@@ -397,9 +397,16 @@ export function applyColorBalance(imageData, balanceSettings) {
 /**
  * Instant Desaturate: converts active layer pixels to grayscale preserving luminosity
  */
-export function applyDesaturate(imageData) {
-  if (!imageData) return;
-  const data = imageData.data;
+export function applyDesaturate(canvasOrImageData) {
+  let ctx, imgData;
+  if (canvasOrImageData && canvasOrImageData.getContext) {
+    ctx = canvasOrImageData.getContext('2d', { willReadFrequently: true });
+    imgData = ctx.getImageData(0, 0, canvasOrImageData.width, canvasOrImageData.height);
+  } else {
+    imgData = canvasOrImageData;
+  }
+  if (!imgData || !imgData.data) return;
+  const data = imgData.data;
   const len = data.length;
 
   for (let i = 0; i < len; i += 4) {
@@ -408,5 +415,85 @@ export function applyDesaturate(imageData) {
     data[i] = lum;
     data[i + 1] = lum;
     data[i + 2] = lum;
+  }
+
+  if (ctx) {
+    ctx.putImageData(imgData, 0, 0);
+  }
+}
+
+/**
+ * Invert Colors (Ctrl+I): inverts RGB color values of the active layer
+ */
+export function applyInvertColors(canvasOrImageData) {
+  let ctx, imgData;
+  if (canvasOrImageData && canvasOrImageData.getContext) {
+    ctx = canvasOrImageData.getContext('2d', { willReadFrequently: true });
+    imgData = ctx.getImageData(0, 0, canvasOrImageData.width, canvasOrImageData.height);
+  } else {
+    imgData = canvasOrImageData;
+  }
+  if (!imgData || !imgData.data) return;
+  const data = imgData.data;
+  const len = data.length;
+
+  for (let i = 0; i < len; i += 4) {
+    if (data[i + 3] === 0) continue;
+    data[i] = 255 - data[i];
+    data[i + 1] = 255 - data[i + 1];
+    data[i + 2] = 255 - data[i + 2];
+  }
+
+  if (ctx) {
+    ctx.putImageData(imgData, 0, 0);
+  }
+}
+
+/**
+ * Auto Tone (Shift+Ctrl+L): stretches per-channel RGB levels across non-transparent pixels
+ */
+export function applyAutoTone(canvasOrImageData) {
+  let ctx, imgData;
+  if (canvasOrImageData && canvasOrImageData.getContext) {
+    ctx = canvasOrImageData.getContext('2d', { willReadFrequently: true });
+    imgData = ctx.getImageData(0, 0, canvasOrImageData.width, canvasOrImageData.height);
+  } else {
+    imgData = canvasOrImageData;
+  }
+  if (!imgData || !imgData.data) return;
+  const data = imgData.data;
+  const len = data.length;
+
+  let minR = 255, maxR = 0;
+  let minG = 255, maxG = 0;
+  let minB = 255, maxB = 0;
+  let hasPixels = false;
+
+  for (let i = 0; i < len; i += 4) {
+    if (data[i + 3] === 0) continue;
+    hasPixels = true;
+    if (data[i] < minR) minR = data[i];
+    if (data[i] > maxR) maxR = data[i];
+    if (data[i + 1] < minG) minG = data[i + 1];
+    if (data[i + 1] > maxG) maxG = data[i + 1];
+    if (data[i + 2] < minB) minB = data[i + 2];
+    if (data[i + 2] > maxB) maxB = data[i + 2];
+  }
+
+  if (!hasPixels) return;
+
+  const rangeR = Math.max(1, maxR - minR);
+  const rangeG = Math.max(1, maxG - minG);
+  const rangeB = Math.max(1, maxB - minB);
+
+  for (let i = 0; i < len; i += 4) {
+    if (data[i + 3] === 0) continue;
+    data[i] = Math.round(((data[i] - minR) / rangeR) * 255);
+    data[i + 1] = Math.round(((data[i + 1] - minG) / rangeG) * 255);
+    data[i + 2] = Math.round(((data[i + 2] - minB) / rangeB) * 255);
+  }
+
+  if (ctx) {
+    ctx.putImageData(imgData, 0, 0);
   }
 }

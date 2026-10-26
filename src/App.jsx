@@ -38,7 +38,9 @@ import {
   applyCurves,
   applyHueSaturation,
   applyColorBalance,
-  applyDesaturate
+  applyDesaturate,
+  applyInvertColors,
+  applyAutoTone
 } from './utils/tonalAdjustmentUtils';
 
 export default function App() {
@@ -690,6 +692,86 @@ export default function App() {
     }, 40);
   }, [layers, activeLayerId, canvasWidth, canvasHeight, pushSnapshot]);
 
+  // Advanced Clipboard Engine: Cut (Ctrl+X / F2)
+  const handleCut = useCallback(() => {
+    const activeLayer = layers.find((l) => l.id === activeLayerId);
+    if (!activeLayer) return;
+
+    if (marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+      handleCopy(false);
+      const sourceCanvas = layerCanvasesRef.current[activeLayerId];
+      if (sourceCanvas) {
+        clearSelectionPixels(sourceCanvas, marqueeSelection, canvasWidth, canvasHeight);
+        pushSnapshot({}, 'Cut Selection', 'edit');
+      }
+    } else {
+      handleLayerViaCut();
+    }
+  }, [layers, activeLayerId, marqueeSelection, handleCopy, canvasWidth, canvasHeight, pushSnapshot, handleLayerViaCut]);
+
+  // File > New Project (Ctrl+N)
+  const handleNewProject = useCallback(() => {
+    if (window.confirm('Create a new project? All unsaved changes will be lost.')) {
+      const bg = createInitialBackgroundLayer();
+      const newLayers = [bg];
+      setLayers(newLayers);
+      setActiveLayerId(bg.id);
+      setMarqueeSelection(null);
+      setCanvasWidth(800);
+      setCanvasHeight(500);
+      setZoom(100);
+      setPan({ x: 0, y: 0 });
+      setTimeout(() => {
+        const bgCanvas = layerCanvasesRef.current[bg.id];
+        if (bgCanvas) {
+          const ctx = bgCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, 800, 500);
+        }
+        initHistory(newLayers, bg.id, 800, 500);
+      }, 50);
+    }
+  }, [initHistory]);
+
+  // File > Print (Ctrl+P)
+  const handlePrint = useCallback(() => {
+    const compCanvas = compositeAllVisibleLayers(layers, layerCanvasesRef, canvasWidth, canvasHeight);
+    const dataUrl = compCanvas.toDataURL('image/png');
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+      printWin.document.write(`<!DOCTYPE html><html><head><title>Print - VeloceEdit</title><style>body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#fff;}img{max-width:100%;max-height:100vh;object-fit:contain;}</style></head><body><img src="${dataUrl}" onload="window.print();window.close();"/></body></html>`);
+      printWin.document.close();
+    } else {
+      window.print();
+    }
+  }, [layers, canvasWidth, canvasHeight]);
+
+  // Edit > Free Transform (Ctrl+T)
+  const handleToggleFreeTransform = useCallback(() => {
+    if (activeTool !== 'select') {
+      setActiveTool('select');
+      setShowTransformControls(true);
+    } else {
+      setShowTransformControls((prev) => !prev);
+    }
+  }, [activeTool]);
+
+  // Select > Deselect (Ctrl+D)
+  const handleDeselect = useCallback(() => {
+    if (marqueeSelection) lastSelectionRef.current = marqueeSelection;
+    setMarqueeSelection(null);
+  }, [marqueeSelection]);
+
+  // View > Zoom In (Ctrl++)
+  const handleZoomIn = useCallback(() => {
+    setZoom((z) => Math.min(500, Math.round(z * 1.25)));
+  }, []);
+
+  // View > Zoom Out (Ctrl+-)
+  const handleZoomOut = useCallback(() => {
+    setZoom((z) => Math.max(10, Math.round(z / 1.25)));
+  }, []);
+
   // Image Size Dialog Commit (Alt+Ctrl+I)
   const handleCommitImageSize = useCallback(({ width, height }) => {
     const newW = Math.round(width);
@@ -1134,12 +1216,28 @@ export default function App() {
     setIsColorBalanceModalOpen(false);
   }, [getActiveCanvas]);
 
-  // 5. Instant Desaturate (Shift+Ctrl+U)
+  // 5. Instant Desaturate (Ctrl+Shift+U)
   const handleDesaturate = useCallback(() => {
     const canvas = getActiveCanvas();
     if (!canvas) return;
     applyDesaturate(canvas);
     pushSnapshot({}, 'Desaturate', 'desaturate');
+  }, [getActiveCanvas, pushSnapshot]);
+
+  // Image > Adjustments > Invert Colors (Ctrl+I)
+  const handleInvertColors = useCallback(() => {
+    const canvas = getActiveCanvas();
+    if (!canvas) return;
+    applyInvertColors(canvas);
+    pushSnapshot({}, 'Invert Colors', 'adjustments');
+  }, [getActiveCanvas, pushSnapshot]);
+
+  // Image > Adjustments > Auto Tone (Ctrl+Shift+L)
+  const handleAutoTone = useCallback(() => {
+    const canvas = getActiveCanvas();
+    if (!canvas) return;
+    applyAutoTone(canvas);
+    pushSnapshot({}, 'Auto Tone', 'adjustments');
   }, [getActiveCanvas, pushSnapshot]);
 
   // Phase 6C: Quick Mask Toggle ('Q')
@@ -1247,8 +1345,16 @@ export default function App() {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e) => {
-      const tag = e.target?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+      // 1. Strict input guarding: allow standard typing in input/textarea/select/isContentEditable
+      const target = e.target;
+      const tag = target?.tagName?.toLowerCase();
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable;
+      if (isInput) {
+        if (e.key === 'Escape' || e.key === 'Enter') {
+          target.blur();
+        }
+        return;
+      }
 
       // Pure Canvas Mode escape via Esc or Tab
       if (screenMode === 'pure_canvas' && (e.key === 'Escape' || e.key === 'Tab')) {
@@ -1257,42 +1363,85 @@ export default function App() {
         return;
       }
 
-      // Revert Shortcut (F12)
-      if (e.key === 'F12' || e.code === 'F12') {
-        e.preventDefault();
-        handleRevert();
-        return;
+      const isCmd = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+      const isAlt = e.altKey;
+      const key = e.key;
+      const keyLower = key ? key.toLowerCase() : '';
+      const code = e.code;
+
+      // --- Function Keys (F1 - F12) ---
+      if (!isCmd && !isAlt) {
+        if (!isShift && (key === 'F1' || code === 'F1')) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if (!isShift && (key === 'F2' || code === 'F2')) {
+          e.preventDefault();
+          handleCut();
+          return;
+        }
+        if (!isShift && (key === 'F3' || code === 'F3')) {
+          e.preventDefault();
+          handleCopy(false);
+          return;
+        }
+        if (!isShift && (key === 'F4' || code === 'F4')) {
+          e.preventDefault();
+          handlePaste(false);
+          return;
+        }
+        if (isShift && (key === 'F5' || code === 'F5')) {
+          e.preventDefault();
+          setIsFillModalOpen(true);
+          return;
+        }
+        if (isShift && (key === 'F6' || code === 'F6')) {
+          e.preventDefault();
+          setIsFeatherModalOpen(true);
+          return;
+        }
+        if (!isShift && (key === 'F12' || code === 'F12')) {
+          e.preventDefault();
+          handleRevert();
+          return;
+        }
       }
 
-      // 0. Ctrl + Alt + Shift shortcuts (Save for Web)
-      if ((e.ctrlKey || e.metaKey) && e.altKey && e.shiftKey) {
-        if (e.key.toLowerCase() === 's') {
+      // --- 1. Ctrl + Alt + Shift Shortcuts (Save for Web: Alt+Shift+Ctrl+S) ---
+      if (isCmd && isAlt && isShift) {
+        if (keyLower === 's') {
           e.preventDefault();
           setIsSaveForWebOpen(true);
           return;
         }
       }
 
-      // 1. Ctrl + Alt shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.altKey) {
-        if (e.key === ';' || e.code === 'Semicolon') {
+      // --- 2. Ctrl + Alt Shortcuts ---
+      if (isCmd && isAlt && !isShift) {
+        if (key === ';' || code === 'Semicolon') {
           e.preventDefault();
           setLockGuides((l) => !l);
           return;
-        } else if (e.key === '0' || e.code === 'Digit0') {
+        }
+        if (key === '0' || code === 'Digit0' || code === 'Numpad0') {
           e.preventDefault();
           setZoom(100);
           setPan({ x: 0, y: 0 });
           return;
-        } else if (e.key.toLowerCase() === 'g') {
+        }
+        if (keyLower === 'g') {
           e.preventDefault();
           handleToggleClippingMask();
           return;
-        } else if (e.key.toLowerCase() === 'i') {
+        }
+        if (keyLower === 'i') {
           e.preventDefault();
           setIsImageSizeModalOpen(true);
           return;
-        } else if (e.key.toLowerCase() === 'c') {
+        }
+        if (keyLower === 'c') {
           e.preventDefault();
           setIsCanvasSizeModalOpen(true);
           return;
@@ -1300,249 +1449,419 @@ export default function App() {
         return;
       }
 
-      // 2. Ctrl + Shift shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
-        if (e.key === ';' || e.code === 'Semicolon') {
+      // --- 3. Ctrl + Shift Shortcuts ---
+      if (isCmd && isShift && !isAlt) {
+        if (keyLower === 's') {
+          // Ctrl + Shift + S: Save As... (Open Export Modal)
           e.preventDefault();
-          setSnapEnabled((s) => !s);
+          setIsExportModalOpen(true);
           return;
-        } else if (e.key.toLowerCase() === 'd') {
+        }
+        if (keyLower === 'z') {
+          // Ctrl + Shift + Z: Redo
           e.preventDefault();
-          handleReselect();
+          redo();
           return;
-        } else if (e.key.toLowerCase() === 'j') {
-          e.preventDefault();
-          handleLayerViaCut();
-          return;
-        } else if (e.key.toLowerCase() === 'u') {
-          e.preventDefault();
-          handleDesaturate();
-          return;
-        } else if (e.key.toLowerCase() === 'c') {
+        }
+        if (keyLower === 'c') {
+          // Ctrl + Shift + C: Copy Merged
           e.preventDefault();
           handleCopy(true);
           return;
-        } else if (e.key.toLowerCase() === 'v') {
+        }
+        if (keyLower === 'v') {
+          // Ctrl + Shift + V: Paste in Place
           e.preventDefault();
           handlePaste(true);
           return;
-        } else if (e.key.toLowerCase() === 'e') {
-          e.preventDefault();
-          handleMergeVisible();
-          return;
-        } else if (e.key === ']' || e.code === 'BracketRight') {
-          e.preventDefault();
-          handleArrangeLayer('front');
-          return;
-        } else if (e.key === '[' || e.code === 'BracketLeft') {
-          e.preventDefault();
-          handleArrangeLayer('back');
-          return;
-        } else if (e.key.toLowerCase() === 'i') {
-          e.preventDefault();
-          handleInvertMarquee();
-          return;
-        } else if (e.key.toLowerCase() === 'n') {
+        }
+        if (keyLower === 'n') {
+          // Ctrl + Shift + N: New Layer
           e.preventDefault();
           handleAddLayer();
           return;
         }
+        if (keyLower === 'j') {
+          // Ctrl + Shift + J: Layer via Cut
+          e.preventDefault();
+          handleLayerViaCut();
+          return;
+        }
+        if (key === ']' || key === '}' || code === 'BracketRight') {
+          // Ctrl + Shift + ]: Bring to Front
+          e.preventDefault();
+          handleArrangeLayer('front');
+          return;
+        }
+        if (key === '[' || key === '{' || code === 'BracketLeft') {
+          // Ctrl + Shift + [: Send to Back
+          e.preventDefault();
+          handleArrangeLayer('back');
+          return;
+        }
+        if (keyLower === 'e') {
+          // Ctrl + Shift + E: Merge Visible
+          e.preventDefault();
+          handleMergeVisible();
+          return;
+        }
+        if (keyLower === 'd') {
+          // Ctrl + Shift + D: Reselect
+          e.preventDefault();
+          handleReselect();
+          return;
+        }
+        if (keyLower === 'i') {
+          // Ctrl + Shift + I: Inverse Selection
+          e.preventDefault();
+          handleInvertMarquee();
+          return;
+        }
+        if (keyLower === 'u') {
+          // Ctrl + Shift + U: Desaturate
+          e.preventDefault();
+          handleDesaturate();
+          return;
+        }
+        if (keyLower === 'l') {
+          // Ctrl + Shift + L: Auto Tone
+          e.preventDefault();
+          handleAutoTone();
+          return;
+        }
+        if (key === ';' || key === ':' || code === 'Semicolon') {
+          // Ctrl + Shift + ;: Toggle Snap to Guides
+          e.preventDefault();
+          setSnapEnabled((s) => !s);
+          return;
+        }
         return;
       }
 
-      // 3. Ctrl shortcuts (without Shift / Alt)
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === "'" || e.code === 'Quote') {
+      // --- 4. Ctrl / Cmd Shortcuts (without Shift or Alt) ---
+      if (isCmd && !isShift && !isAlt) {
+        if (keyLower === 'n') {
+          // Ctrl + N: New Project Dialog / Reset
           e.preventDefault();
-          setShowPixelGrid((g) => !g);
+          handleNewProject();
           return;
-        } else if (e.key === '1' || e.code === 'Digit1') {
+        }
+        if (keyLower === 'o') {
+          // Ctrl + O: Open / Import Image Modal
           e.preventDefault();
-          setZoom(100);
-          setPan({ x: 0, y: 0 });
+          fileInputRef.current?.click();
           return;
-        } else if (e.key.toLowerCase() === 'l') {
-          e.preventDefault();
-          handleOpenLevels();
-          return;
-        } else if (e.key.toLowerCase() === 'm') {
-          e.preventDefault();
-          handleOpenCurves();
-          return;
-        } else if (e.key.toLowerCase() === 'u') {
-          e.preventDefault();
-          handleOpenHueSat();
-          return;
-        } else if (e.key.toLowerCase() === 'b') {
-          e.preventDefault();
-          handleOpenColorBalance();
-          return;
-        } else if (e.key.toLowerCase() === 'j') {
-          e.preventDefault();
-          handleLayerViaCopy();
-          return;
-        } else if (e.key.toLowerCase() === 'c') {
-          e.preventDefault();
-          handleCopy(false);
-          return;
-        } else if (e.key.toLowerCase() === 'v') {
-          e.preventDefault();
-          handlePaste(false);
-          return;
-        } else if (e.key.toLowerCase() === 'e') {
-          e.preventDefault();
-          handleMergeDown();
-          return;
-        } else if (e.key === ']' || e.code === 'BracketRight') {
-          e.preventDefault();
-          handleArrangeLayer('forward');
-          return;
-        } else if (e.key === '[' || e.code === 'BracketLeft') {
-          e.preventDefault();
-          handleArrangeLayer('backward');
-          return;
-        } else if (e.key.toLowerCase() === 'z') {
-          e.preventDefault();
-          undo();
-          return;
-        } else if (e.key.toLowerCase() === 'y') {
-          e.preventDefault();
-          redo();
-          return;
-        } else if (e.key.toLowerCase() === 't') {
-          e.preventDefault();
-          setActiveTool('select');
-          return;
-        } else if (e.key.toLowerCase() === 's') {
+        }
+        if (keyLower === 's') {
+          // Ctrl + S: Export / Save Modal
           e.preventDefault();
           handleSaveProject();
           return;
-        } else if (e.key.toLowerCase() === 'r') {
+        }
+        if (keyLower === 'p') {
+          // Ctrl + P: Canvas Print
           e.preventDefault();
-          setShowRulers((prev) => !prev);
+          handlePrint();
           return;
-        } else if (e.key === ';' || e.code === 'Semicolon') {
+        }
+        if (keyLower === 'z') {
+          // Ctrl + Z: Undo
           e.preventDefault();
-          setShowGuides((prev) => !prev);
+          undo();
           return;
-        } else if (e.key.toLowerCase() === 'd') {
+        }
+        if (keyLower === 'y') {
+          // Ctrl + Y: Redo
           e.preventDefault();
-          if (marqueeSelection) lastSelectionRef.current = marqueeSelection;
-          setMarqueeSelection(null);
+          redo();
           return;
-        } else if (e.key.toLowerCase() === 'a') {
+        }
+        if (keyLower === 'x') {
+          // Ctrl + X: Cut Selection
+          e.preventDefault();
+          handleCut();
+          return;
+        }
+        if (keyLower === 'c') {
+          // Ctrl + C: Copy Selection
+          e.preventDefault();
+          handleCopy(false);
+          return;
+        }
+        if (keyLower === 'v') {
+          // Ctrl + V: Paste
+          e.preventDefault();
+          handlePaste(false);
+          return;
+        }
+        if (keyLower === 't') {
+          // Ctrl + T: Free Transform Toggle
+          e.preventDefault();
+          handleToggleFreeTransform();
+          return;
+        }
+        if (keyLower === 'j') {
+          // Ctrl + J: Layer via Copy
+          e.preventDefault();
+          handleLayerViaCopy();
+          return;
+        }
+        if (key === ']' || code === 'BracketRight') {
+          // Ctrl + ]: Bring Forward
+          e.preventDefault();
+          handleArrangeLayer('forward');
+          return;
+        }
+        if (key === '[' || code === 'BracketLeft') {
+          // Ctrl + [: Send Backward
+          e.preventDefault();
+          handleArrangeLayer('backward');
+          return;
+        }
+        if (keyLower === 'e') {
+          // Ctrl + E: Merge Down
+          e.preventDefault();
+          handleMergeDown();
+          return;
+        }
+        if (keyLower === 'a') {
+          // Ctrl + A: Select All
           e.preventDefault();
           handleSelectAll();
           return;
         }
+        if (keyLower === 'd') {
+          // Ctrl + D: Deselect
+          e.preventDefault();
+          handleDeselect();
+          return;
+        }
+        if (keyLower === 'l') {
+          // Ctrl + L: Levels Modal
+          e.preventDefault();
+          handleOpenLevels();
+          return;
+        }
+        if (keyLower === 'm') {
+          // Ctrl + M: Curves Modal
+          e.preventDefault();
+          handleOpenCurves();
+          return;
+        }
+        if (keyLower === 'u') {
+          // Ctrl + U: Hue/Saturation Modal
+          e.preventDefault();
+          handleOpenHueSat();
+          return;
+        }
+        if (keyLower === 'b') {
+          // Ctrl + B: Color Balance Modal
+          e.preventDefault();
+          handleOpenColorBalance();
+          return;
+        }
+        if (keyLower === 'i') {
+          // Ctrl + I: Invert Colors
+          e.preventDefault();
+          handleInvertColors();
+          return;
+        }
+        if (key === '=' || key === '+' || code === 'Equal' || code === 'NumpadAdd') {
+          // Ctrl + + / Ctrl + =: Zoom In
+          e.preventDefault();
+          handleZoomIn();
+          return;
+        }
+        if (key === '-' || key === '_' || code === 'Minus' || code === 'NumpadSubtract') {
+          // Ctrl + -: Zoom Out
+          e.preventDefault();
+          handleZoomOut();
+          return;
+        }
+        if (key === '0' || code === 'Digit0' || code === 'Numpad0') {
+          // Ctrl + 0: Fit on Screen
+          e.preventDefault();
+          handleFitToScreen();
+          return;
+        }
+        if (key === '1' || code === 'Digit1' || code === 'Numpad1') {
+          // Ctrl + 1: Actual Pixels (100% Zoom)
+          e.preventDefault();
+          setZoom(100);
+          setPan({ x: 0, y: 0 });
+          return;
+        }
+        if (key === "'" || code === 'Quote') {
+          // Ctrl + ': Toggle Pixel Grid
+          e.preventDefault();
+          setShowPixelGrid((g) => !g);
+          return;
+        }
+        if (key === ';' || code === 'Semicolon') {
+          // Ctrl + ;: Toggle Guides
+          e.preventDefault();
+          setShowGuides((g) => !g);
+          return;
+        }
+        if (keyLower === 'r') {
+          // Ctrl + R: Toggle Pixel Rulers
+          e.preventDefault();
+          setShowRulers((r) => !r);
+          return;
+        }
         return;
       }
 
-      // 4. Shift shortcuts (Shift + F5 = Fill, Shift + F6 = Feather)
-      if (e.shiftKey) {
-        if (e.key === 'F5' || e.code === 'F5') {
+      // --- 5. Non-Cmd Modifiers and Keys ---
+      if (!isCmd && !isAlt) {
+        // Brush Modifiers:
+        // { / } (Shift + [ / Shift + ]): Decrease / Increase Brush Hardness by 25%
+        if (key === '{' || (isShift && (key === '[' || code === 'BracketLeft'))) {
+          e.preventDefault();
+          setBrushHardness((h) => Math.max(0, h - 25));
+          return;
+        }
+        if (key === '}' || (isShift && (key === ']' || code === 'BracketRight'))) {
+          e.preventDefault();
+          setBrushHardness((h) => Math.min(100, h + 25));
+          return;
+        }
+
+        // [ / ]: Decrease / Increase Brush Size by 2px (or 5px when size > 20)
+        if (!isShift && (key === '[' || code === 'BracketLeft')) {
+          e.preventDefault();
+          setBrushSize((s) => Math.max(1, s > 20 ? s - 5 : s - 2));
+          return;
+        }
+        if (!isShift && (key === ']' || code === 'BracketRight')) {
+          e.preventDefault();
+          setBrushSize((s) => Math.min(250, s >= 20 ? s + 5 : s + 2));
+          return;
+        }
+
+        // Toggle Lock Transparency (/)
+        if (key === '/' || code === 'Slash') {
+          e.preventDefault();
+          handleToggleLockTransparency();
+          return;
+        }
+
+        // Delete / Backspace: Fill Modal when selection exists, or clear layer
+        if ((key === 'Backspace' || key === 'Delete') && marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
           e.preventDefault();
           setIsFillModalOpen(true);
           return;
-        } else if (e.key === 'F6' || e.code === 'F6') {
+        }
+        if (!isShift && key === 'Delete') {
           e.preventDefault();
-          setIsFeatherModalOpen(true);
+          handleClearActiveLayer();
           return;
         }
-      }
 
-      if (e.altKey) return;
+        // Tool switching & cycling (Direct or Shift + Key)
+        // Sequential / Shift + Key tool toggling:
+        if (keyLower === 'm') {
+          e.preventDefault();
+          setActiveTool((prev) => (prev === 'marquee-rect' ? 'marquee-ellipse' : 'marquee-rect'));
+          return;
+        }
+        if (keyLower === 'l') {
+          e.preventDefault();
+          setActiveTool((prev) => (prev === 'lasso' ? 'polygonal_lasso' : 'lasso'));
+          return;
+        }
+        if (keyLower === 'b') {
+          e.preventDefault();
+          setActiveTool('brush');
+          return;
+        }
+        if (keyLower === 's') {
+          e.preventDefault();
+          setActiveTool('clone');
+          return;
+        }
+        if (keyLower === 'e') {
+          e.preventDefault();
+          setActiveTool((prev) => (prev === 'eraser' ? 'magic_eraser' : 'eraser'));
+          return;
+        }
+        if (keyLower === 'g') {
+          e.preventDefault();
+          setActiveTool((prev) => (prev === 'bucket' ? 'gradient' : 'bucket'));
+          return;
+        }
+        if (keyLower === 'o') {
+          e.preventDefault();
+          setActiveTool((prev) => (prev === 'dodge' ? 'burn' : prev === 'burn' ? 'sponge' : 'dodge'));
+          return;
+        }
+        if (keyLower === 'u') {
+          e.preventDefault();
+          setActiveTool((prev) => (prev === 'rectangle' ? 'circle' : prev === 'circle' ? 'line' : 'rectangle'));
+          return;
+        }
 
-      // 5. Lock Transparency shortcut (/)
-      if (e.key === '/' || e.code === 'Slash') {
-        e.preventDefault();
-        handleToggleLockTransparency();
-        return;
-      }
-
-      // 6. Delete / Backspace when selection exists triggers Fill dialog, or clears active layer
-      if ((e.key === 'Backspace' || e.key === 'Delete') && marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
-        e.preventDefault();
-        setIsFillModalOpen(true);
-        return;
-      }
-
-      if (e.key === 'Delete') {
-        e.preventDefault();
-        handleClearActiveLayer();
-        return;
-      }
-
-      // 7. Single-key tool & mode shortcuts
-      switch (e.key.toLowerCase()) {
-        case 'q':
+        // Direct single-key switches
+        if (keyLower === 'v') {
+          e.preventDefault();
+          setActiveTool('select');
+          return;
+        }
+        if (keyLower === 'c') {
+          e.preventDefault();
+          setActiveTool('crop');
+          return;
+        }
+        if (keyLower === 'i') {
+          e.preventDefault();
+          setActiveTool('eyedropper');
+          return;
+        }
+        if (keyLower === 'j') {
+          e.preventDefault();
+          setActiveTool('spot_healing');
+          return;
+        }
+        if (keyLower === 't') {
+          e.preventDefault();
+          setActiveTool('text');
+          return;
+        }
+        if (keyLower === 'h') {
+          e.preventDefault();
+          setActiveTool('hand');
+          return;
+        }
+        if (keyLower === 'z') {
+          e.preventDefault();
+          setActiveTool('zoom');
+          return;
+        }
+        if (keyLower === 'w') {
+          e.preventDefault();
+          setActiveTool('magic_wand');
+          return;
+        }
+        if (keyLower === 'd') {
+          e.preventDefault();
+          handleResetDefaultColors();
+          return;
+        }
+        if (keyLower === 'x') {
+          e.preventDefault();
+          handleSwapColors();
+          return;
+        }
+        if (keyLower === 'q') {
           e.preventDefault();
           handleToggleQuickMask();
-          break;
-        case 'f':
+          return;
+        }
+        if (keyLower === 'f') {
           e.preventDefault();
           handleCycleScreenMode();
-          break;
-        case 'd':
-          handleResetDefaultColors();
-          break;
-        case 'x':
-          handleSwapColors();
-          break;
-        case 'j':
-          setActiveTool('spot_healing');
-          break;
-        case 'm':
-          setActiveTool((prev) =>
-            prev === 'marquee-rect' ? 'marquee-ellipse' : 'marquee-rect'
-          );
-          break;
-        case 'v':
-          setActiveTool('select');
-          break;
-        case 'l':
-          setActiveTool((prev) => (prev === 'lasso' ? 'polygonal_lasso' : 'lasso'));
-          break;
-        case 'w':
-          setActiveTool('magic_wand');
-          break;
-        case 'i':
-          setActiveTool('eyedropper');
-          break;
-        case 's':
-          setActiveTool('clone');
-          break;
-        case 'z':
-          setActiveTool('zoom');
-          break;
-        case 'c':
-          setActiveTool('crop');
-          break;
-        case 'h':
-          setActiveTool('hand');
-          break;
-        case 'b':
-          setActiveTool('brush');
-          break;
-        case 'e':
-          setActiveTool((prev) => (prev === 'eraser' ? 'magic_eraser' : 'eraser'));
-          break;
-        case 'u':
-          setActiveTool('rectangle');
-          break;
-        case 't':
-          setActiveTool('text');
-          break;
-        case 'g':
-          setActiveTool((prev) => (prev === 'bucket' ? 'gradient' : 'bucket'));
-          break;
-        case 'o':
-          setActiveTool((prev) =>
-            prev === 'dodge' ? 'burn' : prev === 'burn' ? 'sponge' : 'dodge'
-          );
-          break;
-        default:
-          break;
+          return;
+        }
       }
     };
 
@@ -1561,6 +1880,13 @@ export default function App() {
     handleToggleLockTransparency,
     handleCopy,
     handlePaste,
+    handleCut,
+    handleNewProject,
+    handlePrint,
+    handleToggleFreeTransform,
+    handleDeselect,
+    handleZoomIn,
+    handleZoomOut,
     handleClearActiveLayer,
     handleSaveProject,
     handleAddLayer,
@@ -1569,11 +1895,14 @@ export default function App() {
     handleOpenHueSat,
     handleOpenColorBalance,
     handleDesaturate,
+    handleInvertColors,
+    handleAutoTone,
     handleToggleQuickMask,
     handleCycleScreenMode,
     handleReselect,
     handleSelectAll,
     handleRevert,
+    handleFitToScreen,
     marqueeSelection,
     canvasWidth,
     canvasHeight,
@@ -1613,6 +1942,13 @@ export default function App() {
           onCopyMerged={() => handleCopy(true)}
           onPaste={handlePaste}
           onPasteInPlace={() => handlePaste(true)}
+          onCut={handleCut}
+          onNewProject={handleNewProject}
+          onPrint={handlePrint}
+          onInvertColors={handleInvertColors}
+          onAutoTone={handleAutoTone}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
           onOpenFillModal={() => setIsFillModalOpen(true)}
           onOpenImageSize={() => setIsImageSizeModalOpen(true)}
           onOpenCanvasSize={() => setIsCanvasSizeModalOpen(true)}
@@ -1623,12 +1959,9 @@ export default function App() {
           showGuides={showGuides}
           onToggleGuides={() => setShowGuides((g) => !g)}
           onSelectAll={handleSelectAll}
-          onDeselect={() => {
-            if (marqueeSelection) lastSelectionRef.current = marqueeSelection;
-            setMarqueeSelection(null);
-          }}
+          onDeselect={handleDeselect}
           onInvertMarquee={handleInvertMarquee}
-          onFreeTransform={() => setActiveTool('select')}
+          onFreeTransform={handleToggleFreeTransform}
           documentName="Untitled-1.psd"
           onOpenLevels={handleOpenLevels}
           onOpenCurves={handleOpenCurves}

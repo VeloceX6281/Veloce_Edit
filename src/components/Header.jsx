@@ -60,7 +60,14 @@ export default function Header({
   onToggleSnap,
   lockGuides = false,
   onToggleLockGuides,
-  onActualPixels
+  onActualPixels,
+  onNewProject,
+  onPrint,
+  onCut,
+  onInvertColors,
+  onAutoTone,
+  onZoomIn,
+  onZoomOut
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -106,15 +113,17 @@ export default function Header({
       id: 'file',
       label: 'File',
       children: [
-        { label: 'New Project...', shortcut: 'Ctrl+N', action: () => onClearCanvas && onClearCanvas() },
+        { label: 'New Project...', shortcut: 'Ctrl+N', action: () => (onNewProject ? onNewProject() : (onClearCanvas && onClearCanvas())) },
         { label: 'Open / Import Image...', shortcut: 'Ctrl+O', action: () => fileInputRef.current?.click() },
         { divider: true },
         { label: 'Save Project (.json)...', shortcut: 'Ctrl+S', action: onSaveProject },
+        { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: onOpenExportModal },
         { label: 'Save for Web...', shortcut: 'Alt+Shift+Ctrl+S', action: onOpenSaveForWeb },
         { label: 'Export As (PNG, JPEG, WebP)...', shortcut: 'Ctrl+E', action: onOpenExportModal },
         { label: 'Quick Export as PNG', action: onOpenExportModal },
         { divider: true },
         { label: 'Revert', shortcut: 'F12', action: onRevert },
+        { label: 'Print...', shortcut: 'Ctrl+P', action: onPrint },
         { divider: true },
         { label: 'Close Document', shortcut: 'Ctrl+W', action: () => onClearCanvas && onClearCanvas() }
       ]
@@ -123,14 +132,14 @@ export default function Header({
       id: 'edit',
       label: 'Edit',
       children: [
-        { label: 'Undo', shortcut: 'Ctrl+Z', action: onUndo, disabled: !canUndo },
-        { label: 'Redo', shortcut: 'Ctrl+Y', action: onRedo, disabled: !canRedo },
+        { label: 'Undo', shortcut: 'Ctrl+Z / F1', action: onUndo, disabled: !canUndo },
+        { label: 'Redo', shortcut: 'Ctrl+Shift+Z / Ctrl+Y', action: onRedo, disabled: !canRedo },
         { divider: true },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: onLayerViaCut },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => onCopy && onCopy(false) },
-        { label: 'Copy Merged', shortcut: 'Shift+Ctrl+C', action: () => onCopyMerged && onCopyMerged() },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: () => onPaste && onPaste(false) },
-        { label: 'Paste in Place', shortcut: 'Shift+Ctrl+V', action: () => onPasteInPlace && onPasteInPlace() },
+        { label: 'Cut', shortcut: 'Ctrl+X / F2', action: onCut || onLayerViaCut },
+        { label: 'Copy', shortcut: 'Ctrl+C / F3', action: () => onCopy && onCopy(false) },
+        { label: 'Copy Merged', shortcut: 'Ctrl+Shift+C', action: () => onCopyMerged && onCopyMerged() },
+        { label: 'Paste', shortcut: 'Ctrl+V / F4', action: () => onPaste && onPaste(false) },
+        { label: 'Paste in Place', shortcut: 'Ctrl+Shift+V', action: () => onPasteInPlace && onPasteInPlace() },
         { divider: true },
         { label: 'Fill...', shortcut: 'Shift+F5', action: onOpenFillModal },
         { label: 'Free Transform', shortcut: 'Ctrl+T', action: onFreeTransform },
@@ -154,14 +163,15 @@ export default function Header({
             { label: 'Hue/Saturation...', shortcut: 'Ctrl+U', action: onOpenHueSat },
             { label: 'Color Balance...', shortcut: 'Ctrl+B', action: onOpenColorBalance },
             { divider: true },
-            { label: 'Desaturate', shortcut: 'Shift+Ctrl+U', action: onDesaturate }
+            { label: 'Desaturate', shortcut: 'Ctrl+Shift+U', action: onDesaturate },
+            { label: 'Auto Tone', shortcut: 'Ctrl+Shift+L', action: onAutoTone }
           ]
         },
         { divider: true },
-        { label: 'Image Size...', shortcut: 'Alt+Ctrl+I', action: onOpenImageSize },
-        { label: 'Canvas Size...', shortcut: 'Alt+Ctrl+C', action: onOpenCanvasSize },
+        { label: 'Image Size...', shortcut: 'Ctrl+Alt+I', action: onOpenImageSize },
+        { label: 'Canvas Size...', shortcut: 'Ctrl+Alt+C', action: onOpenCanvasSize },
         { divider: true },
-        { label: 'Invert Colors', shortcut: 'Ctrl+I', action: () => {} }
+        { label: 'Invert Colors', shortcut: 'Ctrl+I', action: onInvertColors }
       ]
     },
     {
@@ -252,10 +262,10 @@ export default function Header({
       id: 'view',
       label: 'View',
       children: [
-        { label: '100% (Actual Pixels)', shortcut: 'Ctrl+1', action: onActualPixels },
+        { label: '100% (Actual Pixels)', shortcut: 'Ctrl+1 / Ctrl+Alt+0', action: onActualPixels },
         { label: 'Fit on Screen', shortcut: 'Ctrl+0', action: onFitToScreen },
-        { label: 'Zoom In', shortcut: 'Ctrl++', action: () => setZoom((z) => Math.min(500, z + 25)) },
-        { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => setZoom((z) => Math.max(10, z - 25)) },
+        { label: 'Zoom In', shortcut: 'Ctrl++', action: onZoomIn || (() => setZoom((z) => Math.min(500, Math.round(z * 1.25)))) },
+        { label: 'Zoom Out', shortcut: 'Ctrl+-', action: onZoomOut || (() => setZoom((z) => Math.max(10, Math.round(z / 1.25)))) },
         { divider: true },
         {
           label: 'Screen Mode',

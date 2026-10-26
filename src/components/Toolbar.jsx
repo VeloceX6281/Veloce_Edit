@@ -245,7 +245,9 @@ export default function Toolbar({
       else if (activeTool === 'burn') setActiveTool('sponge');
       else setActiveTool('dodge');
     } else if (toolId === 'shapes') {
-      setActiveTool(activeTool === 'circle' ? 'rectangle' : 'circle');
+      if (activeTool === 'rectangle') setActiveTool('circle');
+      else if (activeTool === 'circle') setActiveTool('line');
+      else setActiveTool('rectangle');
     } else {
       setActiveTool(toolId);
     }
@@ -267,7 +269,7 @@ export default function Toolbar({
           (tool.id === 'dodge' &&
             (activeTool === 'dodge' || activeTool === 'burn' || activeTool === 'sponge')) ||
           (tool.id === 'shapes' &&
-            (activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'shapes'));
+            (activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'line' || activeTool === 'shapes'));
 
         return (
           <button

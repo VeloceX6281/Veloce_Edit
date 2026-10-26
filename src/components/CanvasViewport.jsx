@@ -853,6 +853,11 @@ export default function CanvasViewport({
         ctx.fill();
       }
       ctx.stroke();
+    } else if (activeTool === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(startX + w, startY + h);
+      ctx.stroke();
     }
 
     if (marqueeSelection) ctx.restore();
@@ -1171,7 +1176,7 @@ export default function CanvasViewport({
     }
 
     // 12. SHAPES TOOL
-    if (activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') {
+    if (activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle' || activeTool === 'line') {
       isDrawingShapeRef.current = true;
       shapeStartRef.current = coords;
       if (e.currentTarget.setPointerCapture) {
@@ -1619,8 +1624,8 @@ export default function CanvasViewport({
           e.shiftKey
         );
         refreshClippingMasks();
-        const actionLabel = activeTool === 'circle' ? 'Circle Shape' : 'Rectangle Shape';
-        pushSnapshot({}, actionLabel, activeTool === 'circle' ? 'circle' : 'rectangle');
+        const actionLabel = activeTool === 'circle' ? 'Circle Shape' : activeTool === 'line' ? 'Line Shape' : 'Rectangle Shape';
+        pushSnapshot({}, actionLabel, activeTool);
       }
 
       isDrawingShapeRef.current = false;
