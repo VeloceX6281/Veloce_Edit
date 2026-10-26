@@ -71,7 +71,14 @@ export default function ToolOptionsBar({
   // Polygonal Lasso props
   polyPointsCount = 0,
   onClosePolygonalLasso,
-  onCancelPolygonalLasso
+  onCancelPolygonalLasso,
+  // Phase 6C View & Snap Helpers props
+  showPixelGrid = false,
+  onTogglePixelGrid,
+  snapEnabled = true,
+  onToggleSnap,
+  lockGuides = false,
+  onToggleLockGuides
 }) {
   // Local fallback states if not controlled
   const [localHardness, setLocalHardness] = useState(100);
@@ -142,6 +149,8 @@ export default function ToolOptionsBar({
     lasso: 'Lasso',
     brush: 'Brush',
     eraser: 'Eraser',
+    magic_eraser: 'Magic Eraser',
+    spot_healing: 'Spot Healing Brush',
     crop: 'Crop',
     text: 'Type',
     shapes: 'Shape',
@@ -241,7 +250,87 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 2. BRUSH & ERASER OPTIONS */}
+        {/* 2. SPOT HEALING BRUSH OPTIONS */}
+        {activeTool === 'spot_healing' && (
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-1.5 bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
+              <span className="text-zinc-400">Size:</span>
+              <span className="font-mono text-zinc-200 text-[10px] w-5 text-right">{brushSize}</span>
+              <input
+                type="range"
+                min="3"
+                max="80"
+                value={brushSize}
+                onChange={(e) => setBrushSize(Number(e.target.value))}
+                className="w-16 accent-[#1473e6] cursor-pointer h-1 bg-[#3a3a3a] rounded"
+                title={`Spot Healing Radius: ${brushSize}px`}
+              />
+              <span className="text-zinc-500 text-[10px]">px</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Hardness:</span>
+              <select
+                value={curHardness}
+                onChange={(e) => changeHardness(Number(e.target.value))}
+                className="bg-[#1c1c1c] text-zinc-200 border border-[#3a3a3a] px-1 py-0.5 rounded-[2px] cursor-pointer focus:outline-none text-[10px]"
+              >
+                <option value={100}>100%</option>
+                <option value={80}>80%</option>
+                <option value={50}>50%</option>
+                <option value={0}>0%</option>
+              </select>
+            </div>
+
+            <span className="text-[#888] text-[10px] italic">
+              Click or drag over blemishes to heal using surrounding texture
+            </span>
+          </div>
+        )}
+
+        {/* 3. MAGIC ERASER OPTIONS */}
+        {activeTool === 'magic_eraser' && (
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">Tolerance:</span>
+              <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={curTolerance}
+                  onChange={(e) => changeTolerance(Math.max(0, Math.min(100, Number(e.target.value))))}
+                  className="w-6 bg-transparent text-zinc-200 text-right font-mono focus:outline-none text-[10px]"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-1 cursor-pointer text-zinc-300 hover:text-white">
+              <input
+                type="checkbox"
+                checked={curContiguous}
+                onChange={(e) => changeContiguous(e.target.checked)}
+                className="w-3 h-3 rounded-[2px] accent-[#1473e6] cursor-pointer"
+              />
+              <span>Contiguous</span>
+            </label>
+
+            <label className="flex items-center gap-1 cursor-pointer text-zinc-300 hover:text-white">
+              <input
+                type="checkbox"
+                defaultChecked={true}
+                className="w-3 h-3 rounded-[2px] accent-[#1473e6] cursor-pointer"
+              />
+              <span>Anti-alias</span>
+            </label>
+
+            <span className="text-[#888] text-[10px] italic">
+              Click any color to erase matching pixels
+            </span>
+          </div>
+        )}
+
+        {/* 4. BRUSH & ERASER OPTIONS */}
         {(activeTool === 'brush' || activeTool === 'eraser') && (
           <div className="flex items-center gap-2.5">
             {/* Brush Tip Preview & Size Picker */}
@@ -351,10 +440,9 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 3. GRADIENT TOOL OPTIONS */}
+        {/* 5. GRADIENT TOOL OPTIONS */}
         {activeTool === 'gradient' && (
           <div className="flex items-center gap-2.5">
-            {/* Gradient Preview Bar */}
             <div className="flex items-center gap-1.5">
               <div
                 className="w-16 h-4 rounded-[2px] border border-[#3a3a3a] shadow-inner"
@@ -365,7 +453,6 @@ export default function ToolOptionsBar({
               />
             </div>
 
-            {/* Style: Linear vs Radial */}
             <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] p-0.5 gap-0.5">
               <button
                 type="button"
@@ -393,7 +480,6 @@ export default function ToolOptionsBar({
               </button>
             </div>
 
-            {/* Mode Dropdown */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Mode:</span>
               <select
@@ -412,7 +498,6 @@ export default function ToolOptionsBar({
               </select>
             </div>
 
-            {/* Opacity */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Opacity:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -428,7 +513,6 @@ export default function ToolOptionsBar({
               </div>
             </div>
 
-            {/* Reverse Checkbox */}
             <label className="flex items-center gap-1 cursor-pointer text-zinc-300 hover:text-white">
               <input
                 type="checkbox"
@@ -443,10 +527,9 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 4. DODGE & BURN OPTIONS */}
+        {/* 6. DODGE & BURN OPTIONS */}
         {(activeTool === 'dodge' || activeTool === 'burn') && (
           <div className="flex items-center gap-2.5">
-            {/* Brush Size */}
             <div className="flex items-center gap-1.5 bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
               <span className="text-zinc-400">Size:</span>
               <span className="font-mono text-zinc-200 text-[10px] w-5 text-right">{brushSize}</span>
@@ -462,7 +545,6 @@ export default function ToolOptionsBar({
               <span className="text-zinc-500 text-[10px]">px</span>
             </div>
 
-            {/* Range: Shadows, Midtones, Highlights */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Range:</span>
               <select
@@ -476,7 +558,6 @@ export default function ToolOptionsBar({
               </select>
             </div>
 
-            {/* Exposure */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Exposure:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -498,10 +579,9 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 5. SPONGE OPTIONS */}
+        {/* 7. SPONGE OPTIONS */}
         {activeTool === 'sponge' && (
           <div className="flex items-center gap-2.5">
-            {/* Brush Size */}
             <div className="flex items-center gap-1.5 bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
               <span className="text-zinc-400">Size:</span>
               <span className="font-mono text-zinc-200 text-[10px] w-5 text-right">{brushSize}</span>
@@ -517,7 +597,6 @@ export default function ToolOptionsBar({
               <span className="text-zinc-500 text-[10px]">px</span>
             </div>
 
-            {/* Mode: Desaturate / Saturate */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Mode:</span>
               <select
@@ -530,7 +609,6 @@ export default function ToolOptionsBar({
               </select>
             </div>
 
-            {/* Flow */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Flow:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -552,10 +630,9 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 6. CLONE STAMP OPTIONS */}
+        {/* 8. CLONE STAMP OPTIONS */}
         {activeTool === 'clone' && (
           <div className="flex items-center gap-2.5">
-            {/* Size Picker */}
             <div className="flex items-center gap-1 bg-[#1c1c1c] border border-[#3a3a3a] px-1.5 py-0.5 rounded-[2px]">
               <span className="text-zinc-400">Size:</span>
               <input
@@ -569,7 +646,6 @@ export default function ToolOptionsBar({
               <span className="text-zinc-500 text-[10px]">px</span>
             </div>
 
-            {/* Opacity */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Opacity:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -585,7 +661,6 @@ export default function ToolOptionsBar({
               </div>
             </div>
 
-            {/* Flow */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Flow:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -601,7 +676,6 @@ export default function ToolOptionsBar({
               </div>
             </div>
 
-            {/* Sample Mode */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Sample:</span>
               <select
@@ -618,10 +692,9 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 7. MAGIC WAND OPTIONS */}
+        {/* 9. MAGIC WAND OPTIONS */}
         {activeTool === 'magic_wand' && (
           <div className="flex items-center gap-2.5">
-            {/* Tolerance Input */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Tolerance:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -636,7 +709,6 @@ export default function ToolOptionsBar({
               </div>
             </div>
 
-            {/* Contiguous Checkbox */}
             <label className="flex items-center gap-1 cursor-pointer text-zinc-300 hover:text-white">
               <input
                 type="checkbox"
@@ -647,7 +719,6 @@ export default function ToolOptionsBar({
               <span>Contiguous</span>
             </label>
 
-            {/* Anti-alias Checkbox */}
             <label className="flex items-center gap-1 cursor-pointer text-zinc-300 hover:text-white">
               <input
                 type="checkbox"
@@ -675,7 +746,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 8. CROP OPTIONS */}
+        {/* 10. CROP OPTIONS */}
         {activeTool === 'crop' && (
           <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-1.5">
@@ -719,10 +790,9 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 9. TEXT OPTIONS */}
+        {/* 11. TEXT OPTIONS */}
         {activeTool === 'text' && (
           <div className="flex items-center gap-2.5">
-            {/* Font Family */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Font:</span>
               <select
@@ -739,7 +809,6 @@ export default function ToolOptionsBar({
               </select>
             </div>
 
-            {/* Font Style */}
             <div className="flex items-center gap-1">
               <select
                 value={curFontStyle}
@@ -752,7 +821,6 @@ export default function ToolOptionsBar({
               </select>
             </div>
 
-            {/* Font Size */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Size:</span>
               <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] px-1 py-0.5 rounded-[2px]">
@@ -768,7 +836,6 @@ export default function ToolOptionsBar({
               </div>
             </div>
 
-            {/* Text Alignment */}
             <div className="flex items-center gap-0.5 bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] p-0.5">
               <button
                 type="button"
@@ -802,7 +869,6 @@ export default function ToolOptionsBar({
               </button>
             </div>
 
-            {/* Color Swatch */}
             <div className="flex items-center gap-1">
               <span className="text-zinc-400">Color:</span>
               <div className="relative flex items-center">
@@ -822,7 +888,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 10. MARQUEE & LASSO OPTIONS */}
+        {/* 12. MARQUEE & LASSO OPTIONS */}
         {(activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee' || activeTool === 'lasso' || activeTool === 'polygonal_lasso') && (
           <div className="flex items-center gap-2.5">
             {activeTool !== 'lasso' && activeTool !== 'polygonal_lasso' && (
@@ -852,7 +918,6 @@ export default function ToolOptionsBar({
               </div>
             )}
 
-            {/* Polygonal Lasso Specific Helpers */}
             {activeTool === 'polygonal_lasso' && (
               <div className="flex items-center gap-2">
                 <span className="text-zinc-400">
@@ -915,7 +980,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 11. SHAPES OPTIONS */}
+        {/* 13. SHAPES OPTIONS */}
         {(activeTool === 'rectangle' || activeTool === 'shapes' || activeTool === 'circle') && (
           <div className="flex items-center gap-2.5">
             <div className="flex items-center bg-[#1c1c1c] border border-[#3a3a3a] rounded-[2px] p-0.5 gap-0.5">
@@ -1004,7 +1069,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 12. EYEDROPPER OPTIONS */}
+        {/* 14. EYEDROPPER OPTIONS */}
         {activeTool === 'eyedropper' && (
           <div className="flex items-center gap-2.5">
             <span className="text-zinc-400">Sample Size:</span>
@@ -1013,7 +1078,7 @@ export default function ToolOptionsBar({
           </div>
         )}
 
-        {/* 13. HAND & ZOOM OPTIONS */}
+        {/* 15. HAND & ZOOM OPTIONS */}
         {(activeTool === 'hand' || activeTool === 'zoom') && (
           <div className="flex items-center gap-2">
             <button
@@ -1027,8 +1092,36 @@ export default function ToolOptionsBar({
         )}
       </div>
 
-      {/* Right Quick Toggles: Rulers & Guides */}
-      <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 shrink-0">
+      {/* Right Quick Toggles: Rulers, Guides, Grid, Snap & Lock */}
+      <div className="flex items-center gap-1 text-[10px] text-zinc-400 shrink-0">
+        <button
+          type="button"
+          onClick={onToggleSnap}
+          className={`px-1.5 py-0.5 rounded-[2px] border transition flex items-center gap-1 ${
+            snapEnabled
+              ? 'border-[#1473e6] bg-[#1473e6]/20 text-[#31a8ff] font-medium'
+              : 'border-[#3a3a3a] bg-[#1c1c1c] text-zinc-400 hover:text-zinc-200'
+          }`}
+          title="Snap to Guides & Edges (Shift+Ctrl+;)"
+        >
+          {snapEnabled && <span>✓</span>}
+          <span>Snap</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onTogglePixelGrid}
+          className={`px-1.5 py-0.5 rounded-[2px] border transition flex items-center gap-1 ${
+            showPixelGrid
+              ? 'border-[#1473e6] bg-[#1473e6]/20 text-[#31a8ff] font-medium'
+              : 'border-[#3a3a3a] bg-[#1c1c1c] text-zinc-400 hover:text-zinc-200'
+          }`}
+          title="Pixel Grid Overlay (Ctrl+')"
+        >
+          {showPixelGrid && <span>✓</span>}
+          <span>Grid</span>
+        </button>
+
         <button
           type="button"
           onClick={onToggleRulers}
@@ -1055,6 +1148,20 @@ export default function ToolOptionsBar({
         >
           {showGuides && <span>✓</span>}
           <span>Guides</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleLockGuides}
+          className={`px-1.5 py-0.5 rounded-[2px] border transition flex items-center gap-1 ${
+            lockGuides
+              ? 'border-[#ff9800] bg-[#ff9800]/20 text-[#ff9800] font-medium'
+              : 'border-[#3a3a3a] bg-[#1c1c1c] text-zinc-400 hover:text-zinc-200'
+          }`}
+          title="Lock Guides (Alt+Ctrl+;)"
+        >
+          {lockGuides && <span>🔒</span>}
+          <span>Lock</span>
         </button>
       </div>
     </div>

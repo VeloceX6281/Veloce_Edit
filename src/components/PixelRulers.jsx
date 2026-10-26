@@ -10,7 +10,8 @@ export default function PixelRulers({
   showRulers = true,
   showGuides = true,
   guides = [],
-  setGuides
+  setGuides,
+  lockGuides = false
 }) {
   const topRulerRef = useRef(null);
   const leftRulerRef = useRef(null);
@@ -287,12 +288,12 @@ export default function PixelRulers({
                 <div
                   key={guide.id}
                   style={{ top: `${screenY}px` }}
-                  className="absolute left-0 right-0 h-[1px] bg-cyan-400 border-b border-cyan-400/50 shadow-sm pointer-events-auto cursor-ns-resize group"
-                  onPointerDown={() => setDraggedGuide(guide)}
-                  title={`Horizontal Guide: Y = ${guide.pos}px (Drag to ruler to remove)`}
+                  className={`absolute left-0 right-0 h-[1px] bg-cyan-400 border-b border-cyan-400/50 shadow-sm pointer-events-auto ${lockGuides ? 'cursor-default' : 'cursor-ns-resize'} group`}
+                  onPointerDown={() => !lockGuides && setDraggedGuide(guide)}
+                  title={`Horizontal Guide: Y = ${guide.pos}px ${lockGuides ? '(Locked)' : '(Drag to ruler to remove)'}`}
                 >
                   <span className="absolute left-6 -top-4 px-1 rounded bg-zinc-900 border border-cyan-500 text-[9px] font-mono text-cyan-300 opacity-0 group-hover:opacity-100 transition shadow">
-                    Y: {guide.pos}px
+                    Y: {guide.pos}px {lockGuides ? '(Locked)' : ''}
                   </span>
                 </div>
               );
@@ -302,12 +303,12 @@ export default function PixelRulers({
                 <div
                   key={guide.id}
                   style={{ left: `${screenX}px` }}
-                  className="absolute top-0 bottom-0 w-[1px] bg-cyan-400 border-r border-cyan-400/50 shadow-sm pointer-events-auto cursor-ew-resize group"
-                  onPointerDown={() => setDraggedGuide(guide)}
-                  title={`Vertical Guide: X = ${guide.pos}px (Drag to ruler to remove)`}
+                  className={`absolute top-0 bottom-0 w-[1px] bg-cyan-400 border-r border-cyan-400/50 shadow-sm pointer-events-auto ${lockGuides ? 'cursor-default' : 'cursor-ew-resize'} group`}
+                  onPointerDown={() => !lockGuides && setDraggedGuide(guide)}
+                  title={`Vertical Guide: X = ${guide.pos}px ${lockGuides ? '(Locked)' : '(Drag to ruler to remove)'}`}
                 >
                   <span className="absolute top-6 left-1 px-1 rounded bg-zinc-900 border border-cyan-500 text-[9px] font-mono text-cyan-300 opacity-0 group-hover:opacity-100 transition shadow">
-                    X: {guide.pos}px
+                    X: {guide.pos}px {lockGuides ? '(Locked)' : ''}
                   </span>
                 </div>
               );

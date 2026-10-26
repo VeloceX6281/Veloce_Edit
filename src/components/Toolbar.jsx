@@ -9,7 +9,9 @@ export default function Toolbar({
   onSwapColors,
   onResetDefaultColors,
   onOpenColorPicker,
-  brushSize
+  brushSize,
+  isQuickMaskMode = false,
+  onToggleQuickMask
 }) {
   const tools = [
     {
@@ -83,6 +85,19 @@ export default function Toolbar({
       )
     },
     {
+      id: 'spot_healing',
+      name: 'Spot Healing Brush Tool',
+      shortcut: 'J',
+      hasFlyout: false,
+      icon: (
+        <>
+          <path d="M4.5 15.5l10-10a3.18 3.18 0 014.5 4.5l-10 10a3.18 3.18 0 01-4.5-4.5z" />
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+          <line x1="8.5" y1="15.5" x2="15.5" y2="8.5" strokeDasharray="1.5 1.5" />
+        </>
+      )
+    },
+    {
       id: 'brush',
       name: 'Brush Tool',
       shortcut: 'B',
@@ -109,10 +124,15 @@ export default function Toolbar({
     },
     {
       id: 'eraser',
-      name: 'Eraser Tool',
+      name: activeTool === 'magic_eraser' ? 'Magic Eraser Tool' : 'Eraser Tool',
       shortcut: 'E',
-      hasFlyout: false,
-      icon: (
+      hasFlyout: true,
+      icon: activeTool === 'magic_eraser' ? (
+        <>
+          <path d="M18 13l-6 6M2 20h20M5 16l8-8 6 6-8 8H5v-6z" />
+          <path d="M19 4l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5.5-1z" />
+        </>
+      ) : (
         <path d="M18 13l-6 6M2 20h20M5 16l8-8 6 6-8 8H5v-6z" />
       )
     },
@@ -216,6 +236,8 @@ export default function Toolbar({
       setActiveTool(activeTool === 'marquee-ellipse' ? 'marquee-rect' : 'marquee-ellipse');
     } else if (toolId === 'lasso') {
       setActiveTool(activeTool === 'polygonal_lasso' ? 'lasso' : 'polygonal_lasso');
+    } else if (toolId === 'eraser') {
+      setActiveTool(activeTool === 'eraser' ? 'magic_eraser' : 'eraser');
     } else if (toolId === 'bucket') {
       setActiveTool(activeTool === 'gradient' ? 'bucket' : 'gradient');
     } else if (toolId === 'dodge') {
@@ -238,6 +260,8 @@ export default function Toolbar({
             (activeTool === 'marquee-rect' || activeTool === 'marquee-ellipse' || activeTool === 'marquee')) ||
           (tool.id === 'lasso' &&
             (activeTool === 'lasso' || activeTool === 'polygonal_lasso')) ||
+          (tool.id === 'eraser' &&
+            (activeTool === 'eraser' || activeTool === 'magic_eraser')) ||
           (tool.id === 'bucket' &&
             (activeTool === 'bucket' || activeTool === 'gradient')) ||
           (tool.id === 'dodge' &&
@@ -299,6 +323,35 @@ export default function Toolbar({
         onResetDefaultColors={onResetDefaultColors}
         onOpenColorPicker={onOpenColorPicker}
       />
+
+      {/* Quick Mask Mode Toggle Button (Hotkey Q) */}
+      <button
+        type="button"
+        onClick={onToggleQuickMask}
+        title={`Edit in ${isQuickMaskMode ? 'Standard Mode (Q)' : 'Quick Mask Mode (Q)'}`}
+        className={`w-[26px] h-[24px] mt-1 flex items-center justify-center rounded-[2px] transition group relative shrink-0 ${
+          isQuickMaskMode
+            ? 'bg-[#b71c1c] text-white border border-[#ff5252] shadow-sm'
+            : 'text-[#9c9c9c] hover:text-[#ffffff] hover:bg-[#343434] border border-[#383838]'
+        }`}
+      >
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          {isQuickMaskMode ? (
+            <>
+              <rect x="2" y="2" width="20" height="20" rx="3" />
+              <circle cx="12" cy="12" r="5" fill="#ff5252" stroke="#ffffff" />
+            </>
+          ) : (
+            <>
+              <rect x="2" y="2" width="20" height="20" rx="3" />
+              <circle cx="12" cy="12" r="5" strokeDasharray="3 2" />
+            </>
+          )}
+        </svg>
+        <span className="absolute left-8 px-2 py-0.5 rounded-[2px] bg-[#1c1c1c] border border-[#383838] text-[10px] text-zinc-200 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition duration-100 z-50 shadow-2xl font-sans">
+          {isQuickMaskMode ? 'Standard Mode (Q)' : 'Quick Mask Mode (Q)'}
+        </span>
+      </button>
 
       {/* Brush Size Indicator */}
       <div

@@ -9,6 +9,7 @@ import { getLayerContentBounds } from '../utils/transformUtils';
 import { computeMagicWandSelection } from '../utils/selectionUtils';
 import { getClippingBaseIndex, getCompositeOperation, createLiveTextLayer } from '../utils/layerUtils';
 import { rgbToHex } from '../utils/colorUtils';
+import { applySpotHealing, applyMagicEraser } from '../utils/healingUtils';
 
 export default function CanvasViewport({
   activeTool,
@@ -70,7 +71,13 @@ export default function CanvasViewport({
   polyPointsCount = 0,
   setPolyPointsCount,
   onClosePolygonalLassoRef,
-  onCancelPolygonalLassoRef
+  onCancelPolygonalLassoRef,
+  // Phase 6C props
+  isQuickMaskMode = false,
+  quickMaskCanvasRef,
+  showPixelGrid = false,
+  snapEnabled = true,
+  lockGuides = false
 }) {
   const previewCanvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -404,18 +411,47 @@ export default function CanvasViewport({
     return layerCanvasesRef.current[fallbackId] || null;
   }, [activeLayerId, layers, layerCanvasesRef]);
 
-  // Convert client mouse coordinates to canvas coordinate space
+  // Convert client mouse coordinates to canvas coordinate space (with magnetic snapping)
   const getCanvasCoords = useCallback((e) => {
     const canvas = getActiveCanvas();
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    return {
-      x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top) * scaleY)
-    };
-  }, [getActiveCanvas]);
+    let x = Math.round((e.clientX - rect.left) * scaleX);
+    let y = Math.round((e.clientY - rect.top) * scaleY);
+
+    if (snapEnabled) {
+      const snapThreshold = 8;
+      // Snap to guides
+      if (guides && guides.length > 0) {
+        for (const g of guides) {
+          if (g.type === 'vertical') {
+            if (Math.abs(x - g.pos) <= snapThreshold) {
+              x = g.pos;
+            }
+          } else if (g.type === 'horizontal') {
+            if (Math.abs(y - g.pos) <= snapThreshold) {
+              y = g.pos;
+            }
+          }
+        }
+      }
+      // Snap to canvas edges
+      if (Math.abs(x - 0) <= snapThreshold) x = 0;
+      if (Math.abs(x - canvasWidth) <= snapThreshold) x = canvasWidth;
+      // Snap to canvas center
+      const midX = Math.round(canvasWidth / 2);
+      if (Math.abs(x - midX) <= snapThreshold) x = midX;
+
+      if (Math.abs(y - 0) <= snapThreshold) y = 0;
+      if (Math.abs(y - canvasHeight) <= snapThreshold) y = canvasHeight;
+      const midY = Math.round(canvasHeight / 2);
+      if (Math.abs(y - midY) <= snapThreshold) y = midY;
+    }
+
+    return { x, y };
+  }, [getActiveCanvas, snapEnabled, guides, canvasWidth, canvasHeight]);
 
   // Apply marquee or Magic Wand clipping path to active canvas context
   const applyMarqueeClip = useCallback((ctx) => {
@@ -842,6 +878,91 @@ export default function CanvasViewport({
 
     const coords = getCanvasCoords(e);
     lastMousePosRef.current = coords;
+
+    // Quick Mask Mode drawing handler
+    if (isQuickMaskMode) {
+      if (activeTool === 'brush' || activeTool === 'eraser') {
+        const qCanvas = quickMaskCanvasRef?.current;
+        if (!qCanvas) return;
+        isDrawingRef.current = true;
+        pointsRef.current = [coords];
+        lastMidPointRef.current = coords;
+
+        const qCtx = qCanvas.getContext('2d');
+        qCtx.save();
+        qCtx.lineCap = 'round';
+        qCtx.lineJoin = 'round';
+        qCtx.lineWidth = brushSize;
+
+        const isWhite = brushColor.toLowerCase() === '#ffffff' || brushColor.toLowerCase() === '#fff';
+        if (activeTool === 'eraser' || isWhite) {
+          qCtx.globalCompositeOperation = 'destination-out';
+          qCtx.fillStyle = '#ffffff';
+          qCtx.strokeStyle = '#ffffff';
+        } else {
+          qCtx.globalCompositeOperation = 'source-over';
+          qCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+          qCtx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+        }
+
+        qCtx.beginPath();
+        qCtx.arc(coords.x, coords.y, Math.max(1, brushSize / 2), 0, Math.PI * 2);
+        qCtx.fill();
+
+        if (e.currentTarget.setPointerCapture) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
+        return;
+      }
+
+      if (activeTool === 'bucket') {
+        const qCanvas = quickMaskCanvasRef?.current;
+        if (qCanvas) {
+          const qCtx = qCanvas.getContext('2d');
+          const isWhite = brushColor.toLowerCase() === '#ffffff' || brushColor.toLowerCase() === '#fff';
+          if (isWhite) {
+            qCtx.clearRect(0, 0, qCanvas.width, qCanvas.height);
+          } else {
+            qCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+            qCtx.fillRect(0, 0, qCanvas.width, qCanvas.height);
+          }
+        }
+        return;
+      }
+    }
+
+    // Spot Healing Brush ('spot_healing' / 'J')
+    if (activeTool === 'spot_healing') {
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+      isDrawingRef.current = true;
+      applySpotHealing(activeCanvas, coords.x, coords.y, brushSize / 2);
+      refreshClippingMasks();
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
+
+    // Magic Eraser Tool ('magic_eraser')
+    if (activeTool === 'magic_eraser') {
+      const activeCanvas = getActiveCanvas();
+      if (!activeCanvas) return;
+      const currentLayerObj = layers.find((l) => l.id === activeLayerId);
+      const isBg = currentLayerObj?.isBackground;
+      applyMagicEraser({
+        canvas: activeCanvas,
+        startX: coords.x,
+        startY: coords.y,
+        tolerance: wandTolerance,
+        contiguous: wandContiguous,
+        isBackground: isBg,
+        backgroundColor: backgroundColor
+      });
+      refreshClippingMasks();
+      pushSnapshot({}, 'Magic Eraser', 'magic_eraser');
+      return;
+    }
 
     // 1. MOVE TOOL ('select' / 'V'): Auto-select layer
     if (activeTool === 'select') {
@@ -1293,6 +1414,42 @@ export default function CanvasViewport({
       return;
     }
 
+    // Quick Mask drawing move
+    if (isDrawingRef.current && isQuickMaskMode && (activeTool === 'brush' || activeTool === 'eraser')) {
+      const qCanvas = quickMaskCanvasRef?.current;
+      if (qCanvas) {
+        const points = pointsRef.current;
+        const lastPoint = points[points.length - 1];
+        const dist = Math.hypot(coords.x - lastPoint.x, coords.y - lastPoint.y);
+        if (dist >= 1.5) {
+          points.push(coords);
+          const qCtx = qCanvas.getContext('2d');
+          const p1 = points[points.length - 2];
+          const p2 = points[points.length - 1];
+          const midPoint = {
+            x: (p1.x + p2.x) / 2,
+            y: (p1.y + p2.y) / 2
+          };
+          qCtx.beginPath();
+          qCtx.moveTo(lastMidPointRef.current.x, lastMidPointRef.current.y);
+          qCtx.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y);
+          qCtx.stroke();
+          lastMidPointRef.current = midPoint;
+        }
+      }
+      return;
+    }
+
+    // Spot Healing stroke move
+    if (isDrawingRef.current && activeTool === 'spot_healing') {
+      const activeCanvas = getActiveCanvas();
+      if (activeCanvas) {
+        applySpotHealing(activeCanvas, coords.x, coords.y, brushSize / 2);
+        refreshClippingMasks();
+      }
+      return;
+    }
+
     // Freehand Brush / Eraser drawing
     if (isDrawingRef.current && (activeTool === 'brush' || activeTool === 'eraser')) {
       const activeCanvas = getActiveCanvas();
@@ -1470,6 +1627,26 @@ export default function CanvasViewport({
       return;
     }
 
+    // Finish Quick Mask drawing
+    if (isDrawingRef.current && isQuickMaskMode && (activeTool === 'brush' || activeTool === 'eraser')) {
+      isDrawingRef.current = false;
+      pointsRef.current = [];
+      const qCanvas = quickMaskCanvasRef?.current;
+      if (qCanvas) {
+        const qCtx = qCanvas.getContext('2d');
+        qCtx.restore();
+      }
+      return;
+    }
+
+    // Finish Spot Healing stroke
+    if (isDrawingRef.current && activeTool === 'spot_healing') {
+      isDrawingRef.current = false;
+      refreshClippingMasks();
+      pushSnapshot({}, 'Spot Healing Brush', 'spot_healing');
+      return;
+    }
+
     // Commit Brush / Eraser stroke
     if (isDrawingRef.current) {
       const activeCanvas = getActiveCanvas();
@@ -1611,6 +1788,8 @@ export default function CanvasViewport({
       return isPanningRef.current ? 'cursor-grabbing' : 'cursor-grab';
     }
     switch (activeTool) {
+      case 'spot_healing':
+      case 'magic_eraser':
       case 'marquee':
       case 'marquee-rect':
       case 'marquee-ellipse':
@@ -1650,7 +1829,7 @@ export default function CanvasViewport({
       <div className="h-[26px] bg-[#282828] border-b border-[#181818] flex items-center px-2 z-10 shrink-0">
         <div className="flex items-center gap-2 bg-[#1e1e1e] text-zinc-200 border-t-2 border-[#1473e6] px-3 py-1 text-[11px] font-sans border-r border-[#181818] border-l border-[#181818] rounded-t-[2px] shadow-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6] inline-block" />
-          <span className="font-medium text-zinc-100">{documentName}</span>
+          <span className="font-medium text-zinc-100">{documentName}{isQuickMaskMode ? ' [Quick Mask]' : ''}</span>
           <span className="text-[#888]">@ {zoom}% (RGB/8#)</span>
           <button
             type="button"
@@ -1680,6 +1859,7 @@ export default function CanvasViewport({
           showGuides={showGuides}
           guides={guides}
           setGuides={setGuides}
+          lockGuides={lockGuides}
         />
 
         {/* Artboard Container with Authentic Photoshop Drop Shadow & Dark Checkerboard */}
@@ -1741,6 +1921,27 @@ export default function CanvasViewport({
             canvasWidth={canvasWidth}
             canvasHeight={canvasHeight}
           />
+
+          {/* Quick Mask Overlay Canvas */}
+          <canvas
+            ref={quickMaskCanvasRef}
+            width={canvasWidth}
+            height={canvasHeight}
+            style={{ display: isQuickMaskMode ? 'block' : 'none' }}
+            className="absolute inset-0 block pointer-events-none z-35"
+          />
+
+          {/* 1px Geometric Pixel Grid Overlay (when zoom >= 100%) */}
+          {showPixelGrid && zoom >= 100 && (
+            <div
+              className="absolute inset-0 pointer-events-none z-25"
+              style={{
+                backgroundImage: `linear-gradient(to right, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+                                  linear-gradient(to bottom, rgba(255, 255, 255, 0.18) 1px, transparent 1px)`,
+                backgroundSize: '1px 1px'
+              }}
+            />
+          )}
 
           {/* Clone Stamp Anchor Crosshair */}
           {activeTool === 'clone' && cloneAnchor && (
@@ -1849,7 +2050,7 @@ export default function CanvasViewport({
           <span className="text-[#3a3a3a]">|</span>
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-[#1473e6]" />
-            <span>Layer: <strong className="text-zinc-200 font-medium">{activeLayerName}</strong></span>
+            <span>Layer: <strong className="text-zinc-200 font-medium">{isQuickMaskMode ? '[Quick Mask]' : activeLayerName}</strong></span>
           </div>
         </div>
 

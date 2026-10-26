@@ -14,8 +14,11 @@ import LevelsModal from './components/LevelsModal';
 import CurvesModal from './components/CurvesModal';
 import HueSaturationModal from './components/HueSaturationModal';
 import ColorBalanceModal from './components/ColorBalanceModal';
+import SaveForWebModal from './components/SaveForWebModal';
+import FeatherModal from './components/FeatherModal';
 import { useCanvasHistory } from './hooks/useCanvasHistory';
 import { DEFAULT_ADJUSTMENTS, getFilterCSSString } from './utils/filterUtils';
+import { convertQuickMaskToSelection, featherSelection } from './utils/selectionUtils';
 import {
   createInitialBackgroundLayer,
   createNewLayer,
@@ -127,6 +130,17 @@ export default function App() {
 
   // Internal Clipboard Engine
   const clipboardRef = useRef(null);
+
+  // Phase 6C: Quick Mask, Selection Cache, View Modes, and Modals
+  const [isQuickMaskMode, setIsQuickMaskMode] = useState(false);
+  const quickMaskCanvasRef = useRef(null);
+  const lastSelectionRef = useRef(null);
+  const [isSaveForWebOpen, setIsSaveForWebOpen] = useState(false);
+  const [isFeatherModalOpen, setIsFeatherModalOpen] = useState(false);
+  const [showPixelGrid, setShowPixelGrid] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [lockGuides, setLockGuides] = useState(false);
+  const [screenMode, setScreenMode] = useState('standard'); // 'standard' | 'menu_fullscreen' | 'pure_canvas'
 
   // Computed live filter CSS string for non-destructive GPU preview
   const filterString = getFilterCSSString(adjustments);
@@ -1128,132 +1142,311 @@ export default function App() {
     pushSnapshot({}, 'Desaturate', 'desaturate');
   }, [getActiveCanvas, pushSnapshot]);
 
+  // Phase 6C: Quick Mask Toggle ('Q')
+  const handleToggleQuickMask = useCallback(() => {
+    setIsQuickMaskMode((prev) => {
+      const next = !prev;
+      const qCanvas = quickMaskCanvasRef.current;
+      if (next) {
+        // Entering Quick Mask: convert active selection to mask
+        if (qCanvas) {
+          const qCtx = qCanvas.getContext('2d');
+          qCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+          if (marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0) {
+            lastSelectionRef.current = marqueeSelection;
+            // Fill unselected area with 50% opacity red (#ff0000)
+            qCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+            qCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+            qCtx.globalCompositeOperation = 'destination-out';
+            if (marqueeSelection.type === 'path' && marqueeSelection.pathString) {
+              try {
+                const p2d = new Path2D(marqueeSelection.pathString);
+                qCtx.fill(p2d);
+              } catch (e) {
+                qCtx.fillRect(marqueeSelection.x, marqueeSelection.y, marqueeSelection.width, marqueeSelection.height);
+              }
+            } else if (marqueeSelection.type === 'ellipse') {
+              const rx = marqueeSelection.x;
+              const ry = marqueeSelection.y;
+              const rw = marqueeSelection.width;
+              const rh = marqueeSelection.height;
+              qCtx.beginPath();
+              qCtx.ellipse(rx + rw / 2, ry + rh / 2, Math.abs(rw / 2), Math.abs(rh / 2), 0, 0, Math.PI * 2);
+              qCtx.fill();
+            } else {
+              qCtx.fillRect(marqueeSelection.x, marqueeSelection.y, marqueeSelection.width, marqueeSelection.height);
+            }
+            qCtx.globalCompositeOperation = 'source-over';
+          }
+        }
+        setMarqueeSelection(null);
+      } else {
+        // Exiting Quick Mask: convert mask alpha to marching ants selection
+        if (qCanvas) {
+          const newSelection = convertQuickMaskToSelection(qCanvas);
+          if (newSelection) {
+            setMarqueeSelection(newSelection);
+            lastSelectionRef.current = newSelection;
+          }
+          const qCtx = qCanvas.getContext('2d');
+          qCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+        }
+      }
+      return next;
+    });
+  }, [canvasWidth, canvasHeight, marqueeSelection]);
+
+  // Phase 6C: Reselect (Shift+Ctrl+D)
+  const handleReselect = useCallback(() => {
+    if (lastSelectionRef.current) {
+      setMarqueeSelection(lastSelectionRef.current);
+    }
+  }, []);
+
+  // Phase 6C: Select All (Ctrl+A)
+  const handleSelectAll = useCallback(() => {
+    const fullSel = {
+      type: 'rect',
+      x: 0,
+      y: 0,
+      width: canvasWidth,
+      height: canvasHeight,
+      inverted: false
+    };
+    setMarqueeSelection(fullSel);
+    lastSelectionRef.current = fullSel;
+  }, [canvasWidth, canvasHeight]);
+
+  // Phase 6C: Feather Selection (Shift+F6)
+  const handleCommitFeather = useCallback((radius) => {
+    if (marqueeSelection) {
+      const feathered = featherSelection(marqueeSelection, radius, canvasWidth, canvasHeight);
+      setMarqueeSelection(feathered);
+      lastSelectionRef.current = feathered;
+    }
+    setIsFeatherModalOpen(false);
+  }, [marqueeSelection, canvasWidth, canvasHeight]);
+
+  // Phase 6C: Revert to Initial State (F12)
+  const handleRevert = useCallback(() => {
+    if (window.confirm('Revert to the original saved version? This will discard all changes since opening.')) {
+      jumpToIndex(0);
+      setMarqueeSelection(null);
+    }
+  }, [jumpToIndex]);
+
+  // Phase 6C: Screen Mode Cycler ('F')
+  const handleCycleScreenMode = useCallback(() => {
+    setScreenMode((prev) => {
+      if (prev === 'standard') return 'menu_fullscreen';
+      if (prev === 'menu_fullscreen') return 'pure_canvas';
+      return 'standard';
+    });
+  }, []);
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
 
+      // Pure Canvas Mode escape via Esc or Tab
+      if (screenMode === 'pure_canvas' && (e.key === 'Escape' || e.key === 'Tab')) {
+        e.preventDefault();
+        setScreenMode('standard');
+        return;
+      }
+
+      // Revert Shortcut (F12)
+      if (e.key === 'F12' || e.code === 'F12') {
+        e.preventDefault();
+        handleRevert();
+        return;
+      }
+
+      // 0. Ctrl + Alt + Shift shortcuts (Save for Web)
+      if ((e.ctrlKey || e.metaKey) && e.altKey && e.shiftKey) {
+        if (e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          setIsSaveForWebOpen(true);
+          return;
+        }
+      }
+
       // 1. Ctrl + Alt shortcuts
       if ((e.ctrlKey || e.metaKey) && e.altKey) {
-        if (e.key.toLowerCase() === 'g') {
+        if (e.key === ';' || e.code === 'Semicolon') {
+          e.preventDefault();
+          setLockGuides((l) => !l);
+          return;
+        } else if (e.key === '0' || e.code === 'Digit0') {
+          e.preventDefault();
+          setZoom(100);
+          setPan({ x: 0, y: 0 });
+          return;
+        } else if (e.key.toLowerCase() === 'g') {
           e.preventDefault();
           handleToggleClippingMask();
+          return;
         } else if (e.key.toLowerCase() === 'i') {
           e.preventDefault();
           setIsImageSizeModalOpen(true);
+          return;
         } else if (e.key.toLowerCase() === 'c') {
           e.preventDefault();
           setIsCanvasSizeModalOpen(true);
+          return;
         }
         return;
       }
 
       // 2. Ctrl + Shift shortcuts
       if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
-        if (e.key.toLowerCase() === 'j') {
+        if (e.key === ';' || e.code === 'Semicolon') {
+          e.preventDefault();
+          setSnapEnabled((s) => !s);
+          return;
+        } else if (e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          handleReselect();
+          return;
+        } else if (e.key.toLowerCase() === 'j') {
           e.preventDefault();
           handleLayerViaCut();
+          return;
         } else if (e.key.toLowerCase() === 'u') {
           e.preventDefault();
           handleDesaturate();
+          return;
         } else if (e.key.toLowerCase() === 'c') {
           e.preventDefault();
           handleCopy(true);
+          return;
         } else if (e.key.toLowerCase() === 'v') {
           e.preventDefault();
           handlePaste(true);
+          return;
         } else if (e.key.toLowerCase() === 'e') {
           e.preventDefault();
           handleMergeVisible();
+          return;
         } else if (e.key === ']' || e.code === 'BracketRight') {
           e.preventDefault();
           handleArrangeLayer('front');
+          return;
         } else if (e.key === '[' || e.code === 'BracketLeft') {
           e.preventDefault();
           handleArrangeLayer('back');
+          return;
         } else if (e.key.toLowerCase() === 'i') {
           e.preventDefault();
           handleInvertMarquee();
+          return;
         } else if (e.key.toLowerCase() === 'n') {
           e.preventDefault();
           handleAddLayer();
+          return;
         }
         return;
       }
 
       // 3. Ctrl shortcuts (without Shift / Alt)
       if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === 'l') {
+        if (e.key === "'" || e.code === 'Quote') {
+          e.preventDefault();
+          setShowPixelGrid((g) => !g);
+          return;
+        } else if (e.key === '1' || e.code === 'Digit1') {
+          e.preventDefault();
+          setZoom(100);
+          setPan({ x: 0, y: 0 });
+          return;
+        } else if (e.key.toLowerCase() === 'l') {
           e.preventDefault();
           handleOpenLevels();
+          return;
         } else if (e.key.toLowerCase() === 'm') {
           e.preventDefault();
           handleOpenCurves();
+          return;
         } else if (e.key.toLowerCase() === 'u') {
           e.preventDefault();
           handleOpenHueSat();
+          return;
         } else if (e.key.toLowerCase() === 'b') {
           e.preventDefault();
           handleOpenColorBalance();
+          return;
         } else if (e.key.toLowerCase() === 'j') {
           e.preventDefault();
           handleLayerViaCopy();
+          return;
         } else if (e.key.toLowerCase() === 'c') {
           e.preventDefault();
           handleCopy(false);
+          return;
         } else if (e.key.toLowerCase() === 'v') {
           e.preventDefault();
           handlePaste(false);
+          return;
         } else if (e.key.toLowerCase() === 'e') {
           e.preventDefault();
           handleMergeDown();
+          return;
         } else if (e.key === ']' || e.code === 'BracketRight') {
           e.preventDefault();
           handleArrangeLayer('forward');
+          return;
         } else if (e.key === '[' || e.code === 'BracketLeft') {
           e.preventDefault();
           handleArrangeLayer('backward');
+          return;
         } else if (e.key.toLowerCase() === 'z') {
           e.preventDefault();
           undo();
+          return;
         } else if (e.key.toLowerCase() === 'y') {
           e.preventDefault();
           redo();
+          return;
         } else if (e.key.toLowerCase() === 't') {
           e.preventDefault();
           setActiveTool('select');
+          return;
         } else if (e.key.toLowerCase() === 's') {
           e.preventDefault();
           handleSaveProject();
+          return;
         } else if (e.key.toLowerCase() === 'r') {
           e.preventDefault();
           setShowRulers((prev) => !prev);
+          return;
         } else if (e.key === ';' || e.code === 'Semicolon') {
           e.preventDefault();
           setShowGuides((prev) => !prev);
+          return;
         } else if (e.key.toLowerCase() === 'd') {
           e.preventDefault();
+          if (marqueeSelection) lastSelectionRef.current = marqueeSelection;
           setMarqueeSelection(null);
+          return;
         } else if (e.key.toLowerCase() === 'a') {
           e.preventDefault();
-          setMarqueeSelection({
-            type: 'rect',
-            x: 0,
-            y: 0,
-            width: canvasWidth,
-            height: canvasHeight,
-            inverted: false
-          });
+          handleSelectAll();
+          return;
         }
         return;
       }
 
-      // 4. Shift shortcuts (e.g. Shift + F5 for Fill dialog)
+      // 4. Shift shortcuts (Shift + F5 = Fill, Shift + F6 = Feather)
       if (e.shiftKey) {
         if (e.key === 'F5' || e.code === 'F5') {
           e.preventDefault();
           setIsFillModalOpen(true);
+          return;
+        } else if (e.key === 'F6' || e.code === 'F6') {
+          e.preventDefault();
+          setIsFeatherModalOpen(true);
           return;
         }
       }
@@ -1280,13 +1473,24 @@ export default function App() {
         return;
       }
 
-      // 7. Single-key tool shortcuts
+      // 7. Single-key tool & mode shortcuts
       switch (e.key.toLowerCase()) {
+        case 'q':
+          e.preventDefault();
+          handleToggleQuickMask();
+          break;
+        case 'f':
+          e.preventDefault();
+          handleCycleScreenMode();
+          break;
         case 'd':
           handleResetDefaultColors();
           break;
         case 'x':
           handleSwapColors();
+          break;
+        case 'j':
+          setActiveTool('spot_healing');
           break;
         case 'm':
           setActiveTool((prev) =>
@@ -1321,7 +1525,7 @@ export default function App() {
           setActiveTool('brush');
           break;
         case 'e':
-          setActiveTool('eraser');
+          setActiveTool((prev) => (prev === 'eraser' ? 'magic_eraser' : 'eraser'));
           break;
         case 'u':
           setActiveTool('rectangle');
@@ -1365,9 +1569,15 @@ export default function App() {
     handleOpenHueSat,
     handleOpenColorBalance,
     handleDesaturate,
+    handleToggleQuickMask,
+    handleCycleScreenMode,
+    handleReselect,
+    handleSelectAll,
+    handleRevert,
     marqueeSelection,
     canvasWidth,
     canvasHeight,
+    screenMode,
     undo,
     redo
   ]);
@@ -1375,145 +1585,174 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-screen bg-[#1e1e1e] text-zinc-200 select-none overflow-hidden font-sans">
       {/* Studio Header Bar (Photoshop Native Menu Bar, Height 28px) */}
-      <Header
-        zoom={zoom}
-        setZoom={setZoom}
-        onFitToScreen={handleFitToScreen}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={undo}
-        onRedo={redo}
-        onClearCanvas={handleClearActiveLayer}
-        onOpenImportModal={handleOpenImportModal}
-        onOpenExportModal={() => setIsExportModalOpen(true)}
-        onAddLayer={handleAddLayer}
-        onDeleteLayer={handleDeleteLayer}
-        onDuplicateLayer={handleDuplicateLayer}
-        onLayerViaCopy={handleLayerViaCopy}
-        onLayerViaCut={handleLayerViaCut}
-        onArrangeLayer={handleArrangeLayer}
-        onToggleClippingMask={handleToggleClippingMask}
-        onMergeDown={handleMergeDown}
-        onMergeVisible={handleMergeVisible}
-        onFlattenImage={handleFlattenImage}
-        onToggleLockTransparency={handleToggleLockTransparency}
-        isTransparencyLocked={Boolean(layers.find((l) => l.id === activeLayerId)?.locks?.transparent)}
-        onCopy={handleCopy}
-        onCopyMerged={() => handleCopy(true)}
-        onPaste={handlePaste}
-        onPasteInPlace={() => handlePaste(true)}
-        onOpenFillModal={() => setIsFillModalOpen(true)}
-        onOpenImageSize={() => setIsImageSizeModalOpen(true)}
-        onOpenCanvasSize={() => setIsCanvasSizeModalOpen(true)}
-        onSaveProject={handleSaveProject}
-        layersCount={layers.length}
-        showRulers={showRulers}
-        onToggleRulers={() => setShowRulers((r) => !r)}
-        showGuides={showGuides}
-        onToggleGuides={() => setShowGuides((g) => !g)}
-        onSelectAll={() =>
-          setMarqueeSelection({
-            type: 'rect',
-            x: 0,
-            y: 0,
-            width: canvasWidth,
-            height: canvasHeight,
-            inverted: false
-          })
-        }
-        onDeselect={() => setMarqueeSelection(null)}
-        onInvertMarquee={handleInvertMarquee}
-        onFreeTransform={() => setActiveTool('select')}
-        documentName="Untitled-1.psd"
-        onOpenLevels={handleOpenLevels}
-        onOpenCurves={handleOpenCurves}
-        onOpenHueSat={handleOpenHueSat}
-        onOpenColorBalance={handleOpenColorBalance}
-        onDesaturate={handleDesaturate}
-      />
+      {screenMode !== 'pure_canvas' && (
+        <Header
+          zoom={zoom}
+          setZoom={setZoom}
+          onFitToScreen={handleFitToScreen}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          onClearCanvas={handleClearActiveLayer}
+          onOpenImportModal={handleOpenImportModal}
+          onOpenExportModal={() => setIsExportModalOpen(true)}
+          onAddLayer={handleAddLayer}
+          onDeleteLayer={handleDeleteLayer}
+          onDuplicateLayer={handleDuplicateLayer}
+          onLayerViaCopy={handleLayerViaCopy}
+          onLayerViaCut={handleLayerViaCut}
+          onArrangeLayer={handleArrangeLayer}
+          onToggleClippingMask={handleToggleClippingMask}
+          onMergeDown={handleMergeDown}
+          onMergeVisible={handleMergeVisible}
+          onFlattenImage={handleFlattenImage}
+          onToggleLockTransparency={handleToggleLockTransparency}
+          isTransparencyLocked={Boolean(layers.find((l) => l.id === activeLayerId)?.locks?.transparent)}
+          onCopy={handleCopy}
+          onCopyMerged={() => handleCopy(true)}
+          onPaste={handlePaste}
+          onPasteInPlace={() => handlePaste(true)}
+          onOpenFillModal={() => setIsFillModalOpen(true)}
+          onOpenImageSize={() => setIsImageSizeModalOpen(true)}
+          onOpenCanvasSize={() => setIsCanvasSizeModalOpen(true)}
+          onSaveProject={handleSaveProject}
+          layersCount={layers.length}
+          showRulers={showRulers}
+          onToggleRulers={() => setShowRulers((r) => !r)}
+          showGuides={showGuides}
+          onToggleGuides={() => setShowGuides((g) => !g)}
+          onSelectAll={handleSelectAll}
+          onDeselect={() => {
+            if (marqueeSelection) lastSelectionRef.current = marqueeSelection;
+            setMarqueeSelection(null);
+          }}
+          onInvertMarquee={handleInvertMarquee}
+          onFreeTransform={() => setActiveTool('select')}
+          documentName="Untitled-1.psd"
+          onOpenLevels={handleOpenLevels}
+          onOpenCurves={handleOpenCurves}
+          onOpenHueSat={handleOpenHueSat}
+          onOpenColorBalance={handleOpenColorBalance}
+          onDesaturate={handleDesaturate}
+          onSaveForWeb={() => setIsSaveForWebOpen(true)}
+          onRevert={handleRevert}
+          onReselect={handleReselect}
+          onOpenFeather={() => setIsFeatherModalOpen(true)}
+          hasSelection={Boolean(marqueeSelection && marqueeSelection.width > 0 && marqueeSelection.height > 0)}
+          hasCachedSelection={Boolean(lastSelectionRef.current)}
+          screenMode={screenMode}
+          onSetScreenMode={setScreenMode}
+          showPixelGrid={showPixelGrid}
+          onTogglePixelGrid={() => setShowPixelGrid((g) => !g)}
+          snapEnabled={snapEnabled}
+          onToggleSnap={() => setSnapEnabled((s) => !s)}
+          lockGuides={lockGuides}
+          onToggleLockGuides={() => setLockGuides((l) => !l)}
+          onActualPixels={() => {
+            setZoom(100);
+            setPan({ x: 0, y: 0 });
+          }}
+        />
+      )}
 
       {/* Contextual Tool Options Bar (Height 30px) */}
-      <ToolOptionsBar
-        activeTool={activeTool}
-        setActiveTool={setActiveTool}
-        brushColor={foregroundColor}
-        setBrushColor={setForegroundColor}
-        brushSize={brushSize}
-        setBrushSize={setBrushSize}
-        shapeFillEnabled={shapeFillEnabled}
-        setShapeFillEnabled={setShapeFillEnabled}
-        shapeFillColor={shapeFillColor}
-        setShapeFillColor={setShapeFillColor}
-        onFitToScreen={handleFitToScreen}
-        marqueeSelection={marqueeSelection}
-        onDeselectMarquee={() => setMarqueeSelection(null)}
-        onInvertMarquee={handleInvertMarquee}
-        showRulers={showRulers}
-        onToggleRulers={() => setShowRulers((r) => !r)}
-        showGuides={showGuides}
-        onToggleGuides={() => setShowGuides((g) => !g)}
-        onCommitCrop={handleCommitCrop}
-        onCancelCrop={() => setActiveTool('select')}
-        autoSelectLayer={autoSelectLayer}
-        setAutoSelectLayer={setAutoSelectLayer}
-        showTransformControls={showTransformControls}
-        setShowTransformControls={setShowTransformControls}
-        brushHardness={brushHardness}
-        setBrushHardness={setBrushHardness}
-        brushOpacity={brushOpacity}
-        setBrushOpacity={setBrushOpacity}
-        brushFlow={brushFlow}
-        setBrushFlow={setBrushFlow}
-        cloneSampleMode={cloneSampleMode}
-        setCloneSampleMode={setCloneSampleMode}
-        wandTolerance={wandTolerance}
-        setWandTolerance={setWandTolerance}
-        wandContiguous={wandContiguous}
-        setWandContiguous={setWandContiguous}
-        fontFamily={fontFamily}
-        setFontFamily={setFontFamily}
-        fontSize={fontSize}
-        setFontSize={setFontSize}
-        fontStyle={fontStyle}
-        setFontStyle={setFontStyle}
-        textAlign={textAlign}
-        setTextAlign={setTextAlign}
-        gradientStyle={gradientStyle}
-        setGradientStyle={setGradientStyle}
-        gradientBlendMode={gradientBlendMode}
-        setGradientBlendMode={setGradientBlendMode}
-        gradientOpacity={gradientOpacity}
-        setGradientOpacity={setGradientOpacity}
-        gradientReverse={gradientReverse}
-        setGradientReverse={setGradientReverse}
-        foregroundColor={foregroundColor}
-        backgroundColor={backgroundColor}
-        dodgeBurnRange={dodgeBurnRange}
-        setDodgeBurnRange={setDodgeBurnRange}
-        dodgeBurnExposure={dodgeBurnExposure}
-        setDodgeBurnExposure={setDodgeBurnExposure}
-        spongeMode={spongeMode}
-        setSpongeMode={setSpongeMode}
-        spongeFlow={spongeFlow}
-        setSpongeFlow={setSpongeFlow}
-        polyPointsCount={polyPointsCount}
-        onClosePolygonalLasso={() => closePolygonalLassoRef.current && closePolygonalLassoRef.current()}
-        onCancelPolygonalLasso={() => cancelPolygonalLassoRef.current && cancelPolygonalLassoRef.current()}
-      />
-
-      {/* Main Studio Workspace */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Toolbar (Width 36px) with Dual Color Swatch */}
-        <Toolbar
+      {screenMode !== 'pure_canvas' && (
+        <ToolOptionsBar
           activeTool={activeTool}
           setActiveTool={setActiveTool}
+          brushColor={foregroundColor}
+          setBrushColor={setForegroundColor}
+          brushSize={brushSize}
+          setBrushSize={setBrushSize}
+          shapeFillEnabled={shapeFillEnabled}
+          setShapeFillEnabled={setShapeFillEnabled}
+          shapeFillColor={shapeFillColor}
+          setShapeFillColor={setShapeFillColor}
+          onFitToScreen={handleFitToScreen}
+          marqueeSelection={marqueeSelection}
+          onDeselectMarquee={() => {
+            if (marqueeSelection) lastSelectionRef.current = marqueeSelection;
+            setMarqueeSelection(null);
+          }}
+          onInvertMarquee={handleInvertMarquee}
+          showRulers={showRulers}
+          onToggleRulers={() => setShowRulers((r) => !r)}
+          showGuides={showGuides}
+          onToggleGuides={() => setShowGuides((g) => !g)}
+          onCommitCrop={handleCommitCrop}
+          onCancelCrop={() => setActiveTool('select')}
+          autoSelectLayer={autoSelectLayer}
+          setAutoSelectLayer={setAutoSelectLayer}
+          showTransformControls={showTransformControls}
+          setShowTransformControls={setShowTransformControls}
+          brushHardness={brushHardness}
+          setBrushHardness={setBrushHardness}
+          brushOpacity={brushOpacity}
+          setBrushOpacity={setBrushOpacity}
+          brushFlow={brushFlow}
+          setBrushFlow={setBrushFlow}
+          cloneSampleMode={cloneSampleMode}
+          setCloneSampleMode={setCloneSampleMode}
+          wandTolerance={wandTolerance}
+          setWandTolerance={setWandTolerance}
+          wandContiguous={wandContiguous}
+          setWandContiguous={setWandContiguous}
+          fontFamily={fontFamily}
+          setFontFamily={setFontFamily}
+          fontSize={fontSize}
+          setFontSize={setFontSize}
+          fontStyle={fontStyle}
+          setFontStyle={setFontStyle}
+          textAlign={textAlign}
+          setTextAlign={setTextAlign}
+          gradientStyle={gradientStyle}
+          setGradientStyle={setGradientStyle}
+          gradientBlendMode={gradientBlendMode}
+          setGradientBlendMode={setGradientBlendMode}
+          gradientOpacity={gradientOpacity}
+          setGradientOpacity={setGradientOpacity}
+          gradientReverse={gradientReverse}
+          setGradientReverse={setGradientReverse}
           foregroundColor={foregroundColor}
           backgroundColor={backgroundColor}
-          onSwapColors={handleSwapColors}
-          onResetDefaultColors={handleResetDefaultColors}
-          onOpenColorPicker={(target) => setColorPickerTarget(target)}
-          brushSize={brushSize}
+          dodgeBurnRange={dodgeBurnRange}
+          setDodgeBurnRange={setDodgeBurnRange}
+          dodgeBurnExposure={dodgeBurnExposure}
+          setDodgeBurnExposure={setDodgeBurnExposure}
+          spongeMode={spongeMode}
+          setSpongeMode={setSpongeMode}
+          spongeFlow={spongeFlow}
+          setBrushFlow={setBrushFlow}
+          polyPointsCount={polyPointsCount}
+          onClosePolygonalLasso={() => closePolygonalLassoRef.current && closePolygonalLassoRef.current()}
+          onCancelPolygonalLasso={() => cancelPolygonalLassoRef.current && cancelPolygonalLassoRef.current()}
+          snapEnabled={snapEnabled}
+          onToggleSnap={() => setSnapEnabled((s) => !s)}
+          showPixelGrid={showPixelGrid}
+          onTogglePixelGrid={() => setShowPixelGrid((g) => !g)}
+          lockGuides={lockGuides}
+          onToggleLockGuides={() => setLockGuides((l) => !l)}
         />
+      )}
+
+      {/* Main Studio Workspace */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Toolbar (Width 36px) with Dual Color Swatch */}
+        {screenMode !== 'pure_canvas' && (
+          <Toolbar
+            activeTool={activeTool}
+            setActiveTool={setActiveTool}
+            foregroundColor={foregroundColor}
+            backgroundColor={backgroundColor}
+            onSwapColors={handleSwapColors}
+            onResetDefaultColors={handleResetDefaultColors}
+            onOpenColorPicker={(target) => setColorPickerTarget(target)}
+            brushSize={brushSize}
+            isQuickMaskMode={isQuickMaskMode}
+            onToggleQuickMask={handleToggleQuickMask}
+          />
+        )}
 
         {/* Center Multi-Layer Canvas Viewport with 1:1 Photoshop Presentation */}
         <CanvasViewport
@@ -1573,53 +1812,74 @@ export default function App() {
           setPolyPointsCount={setPolyPointsCount}
           onClosePolygonalLassoRef={closePolygonalLassoRef}
           onCancelPolygonalLassoRef={cancelPolygonalLassoRef}
+          isQuickMaskMode={isQuickMaskMode}
+          quickMaskCanvasRef={quickMaskCanvasRef}
+          showPixelGrid={showPixelGrid}
+          snapEnabled={snapEnabled}
+          lockGuides={lockGuides}
         />
 
+        {/* Pure Canvas Mode Escape Pill Banner */}
+        {screenMode === 'pure_canvas' && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-[#1e1e1e]/90 border border-zinc-700 text-zinc-300 text-xs px-3 py-1 rounded shadow-lg backdrop-blur flex items-center gap-2">
+            <span>Pure Canvas Mode</span>
+            <span className="text-zinc-500">|</span>
+            <button
+              onClick={() => setScreenMode('standard')}
+              className="text-[#31a8ff] hover:underline cursor-pointer"
+            >
+              Exit (Esc / Tab / F)
+            </button>
+          </div>
+        )}
+
         {/* Right Dock Panels (Width 280px) */}
-        <RightSidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          activeTool={activeTool}
-          brushSize={brushSize}
-          setBrushSize={setBrushSize}
-          brushColor={foregroundColor}
-          setBrushColor={setForegroundColor}
-          shapeFillEnabled={shapeFillEnabled}
-          setShapeFillEnabled={setShapeFillEnabled}
-          shapeFillColor={shapeFillColor}
-          setShapeFillColor={setShapeFillColor}
-          adjustments={adjustments}
-          setAdjustments={setAdjustments}
-          onApplyAdjustments={handleApplyAdjustments}
-          onResetAdjustments={handleResetAdjustments}
-          onClearCanvas={handleClearActiveLayer}
-          onFillCanvas={handleFillActiveLayer}
-          layers={layers}
-          activeLayerId={activeLayerId}
-          onSelectLayer={setActiveLayerId}
-          onAddLayer={handleAddLayer}
-          onDeleteLayer={handleDeleteLayer}
-          onDuplicateLayer={handleDuplicateLayer}
-          onMoveLayerUp={handleMoveLayerUp}
-          onMoveLayerDown={handleMoveLayerDown}
-          onToggleVisibility={handleToggleVisibility}
-          onChangeOpacity={handleChangeOpacity}
-          onChangeBlendMode={handleChangeBlendMode}
-          onChangeLayerName={handleChangeLayerName}
-          onToggleClippingMask={handleToggleClippingMask}
-          onMergeDown={handleMergeDown}
-          onMergeVisible={handleMergeVisible}
-          onToggleLockTransparency={handleToggleLockTransparency}
-          onLayerViaCopy={handleLayerViaCopy}
-          onLayerViaCut={handleLayerViaCut}
-          historyList={historyList}
-          currentIndex={currentIndex}
-          onJumpToIndex={jumpToIndex}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          onUndo={undo}
-          onRedo={redo}
-        />
+        {screenMode !== 'pure_canvas' && (
+          <RightSidebar
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            activeTool={activeTool}
+            brushSize={brushSize}
+            setBrushSize={setBrushSize}
+            brushColor={foregroundColor}
+            setBrushColor={setForegroundColor}
+            shapeFillEnabled={shapeFillEnabled}
+            setShapeFillEnabled={setShapeFillEnabled}
+            shapeFillColor={shapeFillColor}
+            setShapeFillColor={setShapeFillColor}
+            adjustments={adjustments}
+            setAdjustments={setAdjustments}
+            onApplyAdjustments={handleApplyAdjustments}
+            onResetAdjustments={handleResetAdjustments}
+            onClearCanvas={handleClearActiveLayer}
+            onFillCanvas={handleFillActiveLayer}
+            layers={layers}
+            activeLayerId={activeLayerId}
+            onSelectLayer={setActiveLayerId}
+            onAddLayer={handleAddLayer}
+            onDeleteLayer={handleDeleteLayer}
+            onDuplicateLayer={handleDuplicateLayer}
+            onMoveLayerUp={handleMoveLayerUp}
+            onMoveLayerDown={handleMoveLayerDown}
+            onToggleVisibility={handleToggleVisibility}
+            onChangeOpacity={handleChangeOpacity}
+            onChangeBlendMode={handleChangeBlendMode}
+            onChangeLayerName={handleChangeLayerName}
+            onToggleClippingMask={handleToggleClippingMask}
+            onMergeDown={handleMergeDown}
+            onMergeVisible={handleMergeVisible}
+            onToggleLockTransparency={handleToggleLockTransparency}
+            onLayerViaCopy={handleLayerViaCopy}
+            onLayerViaCut={handleLayerViaCut}
+            historyList={historyList}
+            currentIndex={currentIndex}
+            onJumpToIndex={jumpToIndex}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
+          />
+        )}
       </div>
 
       {/* Photoshop Color Picker Modal */}
@@ -1724,6 +1984,25 @@ export default function App() {
         onClose={handleCancelColorBalance}
         onApply={handleApplyColorBalance}
         onPreview={handlePreviewColorBalance}
+      />
+
+      {/* Phase 6C: Save for Web Modal (Alt+Shift+Ctrl+S) */}
+      <SaveForWebModal
+        isOpen={isSaveForWebOpen}
+        onClose={() => setIsSaveForWebOpen(false)}
+        layerCanvasesRef={layerCanvasesRef}
+        layers={layers}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+        documentName="Untitled-1"
+      />
+
+      {/* Phase 6C: Feather Selection Modal (Shift+F6) */}
+      <FeatherModal
+        isOpen={isFeatherModalOpen}
+        onClose={() => setIsFeatherModalOpen(false)}
+        onApply={handleCommitFeather}
+        initialRadius={5}
       />
     </div>
   );

@@ -46,7 +46,21 @@ export default function Header({
   onOpenCurves,
   onOpenHueSat,
   onOpenColorBalance,
-  onDesaturate
+  onDesaturate,
+  // Phase 6C props
+  onOpenSaveForWeb,
+  onRevert,
+  onReselect,
+  onOpenFeather,
+  screenMode = 'standard',
+  setScreenMode,
+  showPixelGrid = false,
+  onTogglePixelGrid,
+  snapEnabled = true,
+  onToggleSnap,
+  lockGuides = false,
+  onToggleLockGuides,
+  onActualPixels
 }) {
   const fileInputRef = useRef(null);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -96,8 +110,11 @@ export default function Header({
         { label: 'Open / Import Image...', shortcut: 'Ctrl+O', action: () => fileInputRef.current?.click() },
         { divider: true },
         { label: 'Save Project (.json)...', shortcut: 'Ctrl+S', action: onSaveProject },
+        { label: 'Save for Web...', shortcut: 'Alt+Shift+Ctrl+S', action: onOpenSaveForWeb },
         { label: 'Export As (PNG, JPEG, WebP)...', shortcut: 'Ctrl+E', action: onOpenExportModal },
         { label: 'Quick Export as PNG', action: onOpenExportModal },
+        { divider: true },
+        { label: 'Revert', shortcut: 'F12', action: onRevert },
         { divider: true },
         { label: 'Close Document', shortcut: 'Ctrl+W', action: () => onClearCanvas && onClearCanvas() }
       ]
@@ -204,7 +221,15 @@ export default function Header({
       children: [
         { label: 'All', shortcut: 'Ctrl+A', action: onSelectAll },
         { label: 'Deselect', shortcut: 'Ctrl+D', action: onDeselect },
+        { label: 'Reselect', shortcut: 'Shift+Ctrl+D', action: onReselect },
         { label: 'Inverse Selection', shortcut: 'Shift+Ctrl+I', action: onInvertMarquee },
+        { divider: true },
+        {
+          label: 'Modify',
+          submenu: [
+            { label: 'Feather...', shortcut: 'Shift+F6', action: onOpenFeather }
+          ]
+        },
         { divider: true },
         { label: 'Select Subject (AI)', disabled: true }
       ]
@@ -227,13 +252,45 @@ export default function Header({
       id: 'view',
       label: 'View',
       children: [
-        { label: 'Rulers', shortcut: 'Ctrl+R', action: onToggleRulers, checked: showRulers },
-        { label: 'Guides', shortcut: 'Ctrl+;', action: onToggleGuides, checked: showGuides },
-        { divider: true },
+        { label: '100% (Actual Pixels)', shortcut: 'Ctrl+1', action: onActualPixels },
+        { label: 'Fit on Screen', shortcut: 'Ctrl+0', action: onFitToScreen },
         { label: 'Zoom In', shortcut: 'Ctrl++', action: () => setZoom((z) => Math.min(500, z + 25)) },
         { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => setZoom((z) => Math.max(10, z - 25)) },
-        { label: 'Fit on Screen', shortcut: 'Ctrl+0', action: onFitToScreen },
-        { label: '100% (Actual Pixels)', shortcut: 'Ctrl+1', action: () => setZoom(100) }
+        { divider: true },
+        {
+          label: 'Screen Mode',
+          submenu: [
+            {
+              label: 'Standard Screen Mode',
+              shortcut: 'F',
+              checked: screenMode === 'standard',
+              action: () => setScreenMode && setScreenMode('standard')
+            },
+            {
+              label: 'Full Screen Mode with Menu Bar',
+              checked: screenMode === 'menu_fullscreen',
+              action: () => setScreenMode && setScreenMode('menu_fullscreen')
+            },
+            {
+              label: 'Full Screen Mode (Canvas Only)',
+              checked: screenMode === 'pure_canvas',
+              action: () => setScreenMode && setScreenMode('pure_canvas')
+            }
+          ]
+        },
+        { divider: true },
+        {
+          label: 'Show',
+          submenu: [
+            { label: 'Pixel Grid', shortcut: "Ctrl+'", action: onTogglePixelGrid, checked: showPixelGrid },
+            { label: 'Guides', shortcut: 'Ctrl+;', action: onToggleGuides, checked: showGuides },
+            { label: 'Rulers', shortcut: 'Ctrl+R', action: onToggleRulers, checked: showRulers }
+          ]
+        },
+        { label: 'Rulers', shortcut: 'Ctrl+R', action: onToggleRulers, checked: showRulers },
+        { label: 'Guides', shortcut: 'Ctrl+;', action: onToggleGuides, checked: showGuides },
+        { label: 'Snap', shortcut: 'Shift+Ctrl+;', action: onToggleSnap, checked: snapEnabled },
+        { label: 'Lock Guides', shortcut: 'Alt+Ctrl+;', action: onToggleLockGuides, checked: lockGuides }
       ]
     },
     {
@@ -257,7 +314,7 @@ export default function Header({
           label: 'Keyboard Shortcuts Cheatsheet',
           action: () =>
             alert(
-              'V: Move\nM: Marquee\nL: Lasso / Polygonal Lasso\nW: Magic Wand\nC: Crop\nI: Eyedropper\nB: Brush\nS: Clone Stamp\nE: Eraser\nG: Gradient / Paint Bucket\nO: Dodge / Burn / Sponge\nT: Text\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+L: Levels\nCtrl+M: Curves\nCtrl+U: Hue/Saturation\nCtrl+B: Color Balance\nShift+Ctrl+U: Desaturate\nCtrl+Alt+G: Clipping Mask\nCtrl+E: Merge Down\nCtrl+T: Free Transform\nCtrl+Z: Undo\nCtrl+Y: Redo\nCtrl+D: Deselect'
+              'V: Move\nM: Marquee\nL: Lasso / Polygonal Lasso\nW: Magic Wand\nC: Crop\nI: Eyedropper\nJ: Spot Healing\nB: Brush\nS: Clone Stamp\nE: Eraser / Magic Eraser\nG: Gradient / Paint Bucket\nO: Dodge / Burn / Sponge\nQ: Quick Mask Mode\nF: Cycle Screen Modes\nT: Text\nU: Shapes\nH: Hand\nZ: Zoom\nCtrl+L: Levels\nCtrl+M: Curves\nCtrl+U: Hue/Saturation\nCtrl+B: Color Balance\nShift+Ctrl+U: Desaturate\nShift+F6: Feather Selection\nShift+Ctrl+D: Reselect\nCtrl+1: Actual Pixels (100%)\nCtrl+\': Pixel Grid\nShift+Ctrl+;: Snap\nAlt+Ctrl+;: Lock Guides\nAlt+Shift+Ctrl+S: Save for Web\nF12: Revert'
             )
         }
       ]
@@ -312,7 +369,7 @@ export default function Header({
 
                 {isOpen && (
                   <div
-                    className="absolute left-0 top-6 min-w-[210px] bg-[#222222] border border-[#3a3a3a] py-1 shadow-2xl z-50 text-[11px] text-zinc-200 rounded-[2px]"
+                    className="absolute left-0 top-6 min-w-[215px] bg-[#222222] border border-[#3a3a3a] py-1 shadow-2xl z-50 text-[11px] text-zinc-200 rounded-[2px]"
                     onMouseLeave={() => setActiveMenu(null)}
                   >
                     {menu.children.map((child, idx) => {
@@ -357,7 +414,11 @@ export default function Header({
                                     }`}
                                   >
                                     <span className="flex items-center gap-2">
-                                      <span className="w-2" />
+                                      {sub.checked ? (
+                                        <span className="text-[10px] w-2 text-[#31a8ff]">✓</span>
+                                      ) : (
+                                        <span className="w-2" />
+                                      )}
                                       {sub.label}
                                     </span>
                                     {sub.shortcut && (
@@ -412,16 +473,15 @@ export default function Header({
         </nav>
       </div>
 
-      {/* Right Controls: Document Info, Compact Quick Actions, Compact Zoom */}
+      {/* Right Controls: Document Info, Quick Actions, Compact Zoom */}
       <div className="flex items-center gap-2 text-zinc-400">
-        {/* Document Status */}
         <div className="text-[10px] text-zinc-400 font-mono hidden md:inline-block">
           <span className="text-zinc-300">{documentName}</span> @ {zoom}% (RGB/8#)
         </div>
 
         <div className="w-[1px] h-3 bg-[#3a3a3a]" />
 
-        {/* Compact Quick Actions: Import & Export */}
+        {/* Compact Quick Actions */}
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -438,12 +498,25 @@ export default function Header({
 
           <button
             type="button"
+            onClick={onOpenSaveForWeb}
+            className="w-5 h-5 rounded-[2px] bg-[#1c1c1c] hover:bg-[#383838] hover:text-white text-zinc-300 border border-[#3a3a3a] flex items-center justify-center transition"
+            title="Save for Web (Alt+Shift+Ctrl+S)"
+          >
+            <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             onClick={onOpenExportModal}
             className="w-5 h-5 rounded-[2px] bg-[#1473e6] hover:bg-[#0d66d0] text-white flex items-center justify-center transition shadow-sm"
             title="Export Artwork (Ctrl+E)"
           >
             <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
@@ -464,9 +537,9 @@ export default function Header({
           </button>
           <button
             type="button"
-            onClick={() => setZoom(100)}
+            onClick={onActualPixels}
             className="px-1.5 font-mono hover:text-[#31a8ff] transition"
-            title="Reset Zoom to 100% (Ctrl+1)"
+            title="100% Actual Pixels (Ctrl+1)"
           >
             {zoom}%
           </button>
